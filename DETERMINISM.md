@@ -1,5 +1,7 @@
 # Determinism & divergence — when is a swarm reproducible across languages?
 
+> **JavaScript's role:** JS is one of the five *sequential* ports and bit-matches C, Rust, and Go on every discrete, RNG-driven system (foraging, brood-sort, termites, wasps) at every seed. It gets there by carrying the full 64-bit SplitMix64 tape in **`BigInt`** — JS has no native `uint64`, so the PRNG is exact 64-bit integer math while the simulation runs on ordinary IEEE-754 doubles. On the chaotic flock it peels away from C/Rust: V8 ships its own `Math.sin`/`cos`/`sqrt`, and those ULP-level differences amplify over 600 ticks — for a chaotic system, a different `libm` is indistinguishable from a fresh seed. Discrete → identical; chaotic → in-distribution only.
+
 All six systems run in all six languages share **one PRNG** (SplitMix64, seeded from `--seed`) and the reference's
 exact update order and RNG-consumption order. That was deliberate: it turns the 36 ports into an experiment about
 *when a multi-agent computation is reproducible* — a question that matters the moment you scale from these toy
