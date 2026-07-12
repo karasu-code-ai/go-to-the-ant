@@ -1,2 +1,11 @@
 __pycache__/
 *.pyc
+
+# cuda build artifacts
+cuda/forage
+cuda/sort
+cuda/termites
+cuda/wasps
+cuda/flocking
+cuda/wolves
+*.o
