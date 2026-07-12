@@ -1,5 +1,7 @@
 # Determinism & divergence — when is a swarm reproducible across languages?
 
+> **Go's angle:** Go is one of the five *sequential* ports, and for the discrete, RNG-driven systems (foraging, brood-sort, termites, wasps) it is bit-identical to C, Rust, JS, and Java at every seed — same SplitMix64 tape, same IEEE-754 `+ - * /`, nothing to disagree on. It peels off only on chaotic **flocking**: Go ships its own pure-Go `math.Sin/Cos/Sqrt` instead of linking the system `libm`, so it never matches the C/Rust `libm` pair — ULP-level transcendental differences amplify over 600 ticks exactly like a fresh seed. Today every port steps one goroutine over one store, so this determinism is single-threaded; the moment agents become real concurrent goroutines (Rung 1), *the update order itself* becomes the thing you must pin, not the arithmetic.
+
 All six systems run in all six languages share **one PRNG** (SplitMix64, seeded from `--seed`) and the reference's
 exact update order and RNG-consumption order. That was deliberate: it turns the 36 ports into an experiment about
 *when a multi-agent computation is reproducible* — a question that matters the moment you scale from these toy
