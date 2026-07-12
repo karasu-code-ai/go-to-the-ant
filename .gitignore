@@ -1,2 +1,5 @@
 __pycache__/
 *.pyc
+
+# js build artifacts
+*.o
