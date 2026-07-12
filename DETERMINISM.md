@@ -1,5 +1,12 @@
 # Determinism & divergence — when is a swarm reproducible across languages?
 
+> **C is the reference tape.** Among the five sequential ports, C runs a hand-rolled SplitMix64 and IEEE-754
+> `+ - * /` only, so at a fixed seed it produces the bit-identical trajectory the others are measured against —
+> and on the chaotic flocking system C and Rust match exactly *because they link the same system `libm`* (Go,
+> JS, Java, CUDA peel off on their own `sin`/`cos`/`sqrt`). The caveat lives at the compiler flag: keep FMA /
+> `-ffast-math` off on the reference build, since contracted or reordered floating-point breaks bit-equality
+> even though the emergence survives.
+
 All six systems run in all six languages share **one PRNG** (SplitMix64, seeded from `--seed`) and the reference's
 exact update order and RNG-consumption order. That was deliberate: it turns the 36 ports into an experiment about
 *when a multi-agent computation is reproducible* — a question that matters the moment you scale from these toy
