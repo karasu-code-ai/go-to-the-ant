@@ -1,2 +1,11 @@
 __pycache__/
 *.pyc
+
+# go build artifacts
+go/forage
+go/sort
+go/termites
+go/wasps
+go/flocking
+go/wolves
+*.o

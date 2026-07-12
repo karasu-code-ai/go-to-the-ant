@@ -1,5 +1,10 @@
 # "Go to the Ant" — six emergent swarms, recreated from the paper
 
+> **Branch `lang/go` — the Go edition** (agents as goroutines over a shared store). This branch adds a faithful, dependency-free Go port
+> of all six swarms in [`go/`](./go/), beside the pure-Python originals it mirrors. Each language lives on its own
+> `lang/*` branch; the shared story is in [ROADMAP.md](ROADMAP.md) and the cross-language reproducibility findings
+> in [DETERMINISM.md](DETERMINISM.md).
+
 Faithful, from-scratch recreations of all six natural multi-agent systems in Parunak's keystone stigmergy
 paper — ant **foraging**, ant **brood-sorting**, termite **nest-building**, wasp **caste-differentiation**,
 bird/fish **flocking**, and wolf-pack **pursuit**. Each is a handful of local rules from which global order
