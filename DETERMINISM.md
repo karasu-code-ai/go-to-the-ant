@@ -1,5 +1,7 @@
 # Determinism & divergence — when is a swarm reproducible across languages?
 
+> **Rust's role:** Rust is one of the five *sequential* ports, and it is the strictest twin of C — at a fixed seed it is **bit-identical to C at every seed, on every system**, discrete and chaotic alike, because both link the same platform `libm` and share one `sin`/`cos`/`sqrt`. For the discrete RNG-driven swarms it also bit-matches Go/JS/Java (pinned SplitMix64 + IEEE-754 `+ - * /`); under chaotic flocking it stays glued to C while Go/JS/Java peel off on their own transcendentals. Today Rust buys this determinism with strictly serial, single-`&mut` field updates the borrow checker enforces — rung 4 (rayon) is the point where we deliberately trade that exact-trace reproducibility for real parallelism, and measure the cost honestly.
+
 All six systems run in all six languages share **one PRNG** (SplitMix64, seeded from `--seed`) and the reference's
 exact update order and RNG-consumption order. That was deliberate: it turns the 36 ports into an experiment about
 *when a multi-agent computation is reproducible* — a question that matters the moment you scale from these toy
