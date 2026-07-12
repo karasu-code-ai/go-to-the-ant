@@ -1,2 +1,6 @@
 __pycache__/
 *.pyc
+
+# java build artifacts
+java/*.class
+*.o
