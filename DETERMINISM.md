@@ -1,5 +1,7 @@
 # Determinism & divergence — when is a swarm reproducible across languages?
 
+> **CUDA is the parallel exception, on purpose.** For the discrete deposit systems (forage, sort, termites, wasps) the port runs one thread per agent with a per-agent SplitMix64 stream and resolves writes with `atomicAdd`/`atomicCAS`, so it reorders the update (all-read-then-write) and partitions the RNG tape — it does **not** bit-match the five sequential ports by construction, only reproduces their distribution. Where a system is already Jacobi with no atomics and no per-step RNG (wolves), CUDA stays **bit-identical** to C/Go/Rust/JS; flocking diverges like every non-C/Rust port because it ships its own `sin`/`cos`/`sqrt`. The lesson the GPU makes concrete: a nondeterministic reduction order is a fresh seed for the micro-trace, never for the emergence.
+
 All six systems run in all six languages share **one PRNG** (SplitMix64, seeded from `--seed`) and the reference's
 exact update order and RNG-consumption order. That was deliberate: it turns the 36 ports into an experiment about
 *when a multi-agent computation is reproducible* — a question that matters the moment you scale from these toy
