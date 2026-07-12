@@ -1,93 +1,157 @@
-# From "Go to the Ant" (1997) to modern multi-agent systems — a polyglot evolution
+# Go to the Ant — Java edition roadmap
 
-This directory recreates Parunak's foraging swarm in several programming languages, **not** as a syntax
-parade but as a set of *lenses*. Each language forces you to answer a different question about how the system
-actually works, and those questions are the same ones you have to answer when you scale from ants to
-thousands of coordinating computational agents.
+*The ABM-platform lineage, and the JVM's path to large-scale instrumented swarms.*
 
-## The through-line: stigmergy
+This is the Java line of a six-language recreation of Parunak's foraging swarm. The shared story
+is intact and lives below; this document is the part that is **ours** — where the Java ports go next,
+tied to real JVM features a contributor can pick up today.
 
-Every system in "Go to the Ant" coordinates the same way — **through a shared, decaying environment**, never
-by direct negotiation. Ants don't message each other; they modify a pheromone field and read it back later.
-Parunak's word for it (borrowed from Grassé) is **stigmergy**: the trace an agent leaves in the world *is* the
-message, and evaporation is what keeps the medium honest — stale information fades, so the collective tracks a
-moving world without anyone holding global state.
+## The through-line we keep: stigmergy
 
-Three properties fall out of that one idea, and they are the whole reason the paradigm survived 25+ years:
+Every system in "Go to the Ant" coordinates the same way — **through a shared, decaying environment**,
+never by direct negotiation. Ants don't message each other; they modify a pheromone field and read it
+back later. Parunak's word for it (from Grassé) is **stigmergy**: the trace an agent leaves in the
+world *is* the message, and evaporation keeps the medium honest — stale information fades, so the
+collective tracks a moving world without anyone holding global state. Three properties follow, and
+they are why the paradigm survived 25+ years:
 
-1. **The environment is the coordination substrate.** No shared memory to lock, no broadcast to synchronize —
-   just local reads and writes to a field.
-2. **Decay is a feature.** Evaporation is a built-in garbage collector for stale coordination. It is why the
-   trail re-routes around a new wall and why depleted sources are forgotten.
-3. **Emergence over optimization.** No agent computes the answer. The answer (a minimum-spanning-tree trail,
-   a sorted brood, a surrounded moose) is a fixed point of many cheap local updates plus noise.
+1. **The environment is the coordination substrate** — local reads/writes to a field, no lock, no broadcast.
+2. **Decay is a feature** — evaporation is a garbage collector for stale coordination.
+3. **Emergence over optimization** — no agent computes the answer; it is a fixed point of many cheap local updates plus noise.
 
-## What happened since 1997 (the shoulders we build on)
+The intellectual line runs Parunak 1997 → **ACO** (pheromone-on-a-graph), **PSO** and **boids**
+(the flocking rules as optimizers and crowd control), **ABM platforms**, the **actor model**, and
+finally **LLM multi-agent systems**. An ant's pheromone field, an ACO graph, a blackboard, and a
+shared scratchpad that many LLM samples read and write are **the same object at different levels of
+abstraction** — a decaying, shared medium that turns many cheap local contributions into one global result.
 
-Parunak was writing a *survey of principles*, pointing at biology to argue for a style of engineering. The
-quarter-century since turned each of his six vignettes into its own field:
+## Why Java holds this lens
 
-- **Ant Colony Optimization** (Dorigo, 1992→) turned the foraging trail into a general combinatorial optimizer —
-  pheromone-on-a-graph solving TSP, routing, scheduling. This is the direct descendant of §3.1.
-- **Particle Swarm Optimization** (Kennedy & Eberhart, 1995) took the flocking rules (§3.5) and made them a
-  continuous-space optimizer.
-- **Boids in graphics & robotics** — Reynolds' rules (§3.5) became the backbone of crowd simulation and drone
-  swarm control.
-- **Agent-Based Modeling platforms** — Swarm, NetLogo, **MASON**, Repast (mostly JVM, which is *why* Java is one
-  of our lenses) made "many local agents in a shared field" a first-class scientific instrument.
-- **The actor model** (Hewitt 1973; Erlang/Akka in practice) generalized "an agent is a process that only reacts
-  to its local mailbox" — the message-passing cousin of stigmergy, and the reason **Go/goroutines** is a lens.
-- **Multi-agent reinforcement learning** and, most recently, **LLM multi-agent systems** (debate, self-consistency,
-  tool-using agent swarms) put *reasoning* agents into the same coordinate-through-a-shared-artifact pattern.
+The ABM-platform lineage *is* Java's lineage. **Swarm** begat **Repast**, **MASON**, and (on the JVM)
+**NetLogo** — the tools that made "many local agents in a shared field" a first-class scientific
+instrument rather than a one-off simulation. When a computational biologist or economist reaches for a
+serious agent-based model, they reach for something JVM-shaped. That is not incidental to this port; it
+is the whole reason Java is one of the lenses. The other five ports ask *what is the field* (C), *what
+if every agent runs at once* (CUDA), *who may write it* (Rust), *what if each agent is a process* (Go),
+*who gets to see it* (JS). **Java asks: how did the field's scientists actually build the instrument —
+and how far does it scale?**
 
-The straight line to draw: an ant's pheromone field, an ACO graph, a blackboard architecture, and a shared
-scratchpad that many LLM samples read and write are **the same object at different levels of abstraction** — a
-decaying, shared medium that turns many cheap local contributions into one global result.
+Today the six Java ports already lean into the idiom: a `World`/`Nest`/`Mound`/`Colony`/`Hunt` object
+owns the shared field(s), and an explicit per-tick schedule steps a swarm of individually-instantiated
+agent objects (`Ant`, `SortAnt`, `Termite`, `Wasp`, `Boid`, wolves). That is a *sketch* of the
+platform architecture. The roadmap below turns the sketch into the real thing and then pushes it to a
+scale the other lenses can't reach.
 
-## Where this overlaps with the current work
+## The Java evolution ladder
 
-Two active research directions sit at the end of that line, and this polyglot exercise is the on-ramp to both:
+Each rung is a concrete, pickable piece of work tied to a specific JVM capability. Rungs build on each other.
 
-- **Stigmergic distillation** (the reasoning-model line of work). Treat many independent reasoning samples as a
-  swarm and treat their shared, reinforced-and-decayed intermediate structure as the pheromone field: good
-  partial reasoning gets reinforced and followed, weak paths evaporate, and a *consensus frontier* emerges that
-  no single sample computed — exactly the foraging trail, one level up. The CUDA port is not a toy here: the
-  pheromone field as **shared global memory** and deposits as **atomic read-modify-write under contention** is
-  the literal compute pattern of running a swarm of samples on a GPU.
+### Rung 1 — Extract the MASON/Repast schedule abstraction
 
-- **Polyagentic security.** A swarm is a threat model *and* a defense. Adversarial agents that coordinate through
-  a shared environment (poisoning the field, exploiting the evaporation rate, forging trails) versus defensive
-  swarms that detect and re-route — the same attraction/repulsion balance as the wolf pack (§3.6), the same
-  "who owns the shared field and who is allowed to write it" question that **Rust's** ownership model makes
-  explicit and that formal tools (miri, model checking) let you actually *prove* things about.
+Right now each of the six ports hand-rolls its own tick loop and its own field. Factor out the two
+primitives every ABM platform is built on:
 
-## The language lenses
+- **`Steppable`** — a one-method interface, `void step(Schedule s)`, that every agent (and the
+  field-evaporation step) implements. This is MASON's exact contract; adopting the name is deliberate,
+  so the ports read as real ABM code.
+- **`Schedule`** — an ordered driver that steps registered `Steppable`s per tick, with explicit
+  *ordering epochs* so we can preserve the semantics the reference depends on: agents-read-then-field-evaporates
+  (foraging, termites), or two-phase compute-then-commit (flocking, wolves). The ordering discipline
+  that makes the ports deterministic (see below) becomes a first-class, inspectable property of the
+  `Schedule` rather than an implicit loop.
+- **`Field2D` / `ScalarField`** — the shared medium as an interface: `read(x,y)`, `deposit(x,y,amt)`,
+  `evaporate(rate)`, toroidal wrap. C's raw array is one implementation; a sparse/tiled field is another.
+  Repast/MASON call this a `Grid` / `ObjectGrid2D`; matching the vocabulary is the point.
 
-| Language | The question it forces | What it teaches for scaling to many agents |
-|---|---|---|
-| **C** | What is the field, physically? | A raw array. Stigmergy with nothing hidden — the baseline mental model. |
-| **CUDA** | What if every agent runs at once? | Field = global memory; deposit = `atomicAdd` under contention; the update order (all-read-then-write) is a real, principled change. The GPU-swarm substrate. |
-| **Rust** | Who is allowed to write the field? | Ownership/borrowing make the shared-mutable-state question un-ignorable. The formal-verification and security lens. |
-| **Go** | What if each agent is its own process? | Ants → goroutines, field → shared store/channel. The step toward genuine actor-style multi-agent systems. |
-| **JavaScript** | Who gets to see it? | Zero-dependency, browser-portable — the accessible, visual lens that plugs into the live visualizer. |
-| **Java** | How did the field's scientists build it? | The MASON/Repast/NetLogo ABM lineage — the classical platform view. |
+The payoff is exactly the shared ladder's rung 3 ("generalize the field"), realized in Java's idiom:
+once `Steppable` and `Field2D` are interfaces, **the agent and the field become swappable** — the
+precondition for a "pheromone" becoming a reinforced partial solution and an "ant" becoming a reasoning
+sample. Deliverable: all six ports rebuilt on one `swarm.core` package; behaviour bit-identical to today
+(the cross-language check is the regression test).
 
-## The evolution ladder (how each round builds on the last)
+### Rung 2 — Project Loom: agent-per-virtual-thread
 
-1. **Recreate faithfully** (done in Python; this round: 6 languages, all verified). Same emergence, one system.
-2. **Parallelize** — the CUDA port makes the sequential→concurrent update order an explicit modeling choice, and
-   surfaces the concurrent-write (`atomicAdd`) reality of a real swarm. Extend to the other five systems.
-3. **Generalize the field** — abstract "a decaying shared medium with local read/deposit/evaporate" into one
-   interface, so the *agent* and the *field* become swappable. This is the refactor that lets an "agent" become
-   a reasoning sample and a "pheromone" become a reinforced partial solution.
-4. **Swap in reasoning agents** — replace the random-walk ant with a sample/policy; keep the stigmergic
-   scaffold. This is the bridge to the distillation line.
-5. **Adversarial swarms** — add agents that attack the field and agents that defend it; use the ownership/formal
-   lenses to reason about what can be guaranteed. The bridge to the security line.
+This is the rung only Java can climb this way. The actor-model cousin of stigmergy says *an agent is a
+process that reacts to its local neighbourhood*. Go expresses that with goroutines; the JVM's answer,
+GA since Java 21, is **virtual threads**. Give every agent its own virtual thread:
 
-Provenance discipline carries through every rung: where the paper (or its primary sources) prints a formula, it
-is used verbatim and tagged; where it is qualitative, it is operationalized and marked. We invent in the gaps —
-and say exactly where.
+- Each agent is a loop: read local field patch → apply rules → deposit → await the tick barrier. Millions
+  of virtual threads are cheap (a few hundred bytes of heap each, parked on a carrier thread when blocked),
+  so a swarm of 10^5–10^6 ants stops being a `for` loop over an array and becomes a genuine population of
+  concurrent agents.
+- Coordination stays **stigmergic**, not message-passing: agents never call each other; they contend on
+  the shared `Field2D`. That makes the write-conflict question real — a `deposit` is a concurrent
+  read-modify-write, the JVM analogue of CUDA's `atomicAdd`. Options to implement and compare:
+  `LongAdder`/`DoubleAdder` per cell, `AtomicLongArray` with fixed-point accumulation, or a
+  `StructuredTaskScope` per tick that fans out all agents and joins at the barrier before the field
+  evaporates.
+- This directly instantiates the **all-read-then-write vs. read-modify-write** modelling choice that
+  CUDA surfaced — now as a scheduling decision inside one JVM, where you can toggle it and measure the
+  behavioural delta on the same machine.
+
+Honest caveat, tagged as such: concurrent floating-point deposits are **not** order-deterministic
+(`double` addition isn't associative), so a parallel Java run reproduces the *distribution*, not the
+exact trace — the same boundary DETERMINISM.md draws for CUDA. Fixed-point (`long`) deposits restore
+associativity and let a parallel run stay bit-exact; documenting that trade-off is part of the deliverable.
+
+### Rung 3 — JMH: make throughput a measured result, not a vibe
+
+"Scales to many agents" is a claim; on the JVM you settle claims with **JMH** (the Java Microbenchmark
+Harness), which handles warmup, JIT steady-state, and dead-code elimination that naive timing gets wrong.
+Build a `swarm-bench` module that reports, with proper error bars:
+
+- ticks/second and agent-steps/second vs. population size (10^3 → 10^6) for the sequential loop, the
+  virtual-thread version, and a plain platform-thread pool — the three side by side.
+- field-update throughput under contention for each `deposit` strategy from Rung 2.
+- allocation and GC pressure per tick (agents as objects vs. struct-of-arrays), with an eye toward
+  **Project Panama / Vector API** and (later) **Valhalla value objects** to shrink per-agent footprint.
+
+The result is a throughput/scaling curve that turns "the JVM is the platform for large ABM" from lineage
+into a number. This is also what makes a swarm run publishable as a *reproducible performance experiment*.
+
+### Rung 4 — Interop with the JVM data/ML ecosystem
+
+The reason to run a swarm *on the JVM specifically* is everything already living there. Wire the ports into it:
+
+- **Instrumentation & provenance:** emit per-tick order parameters (deliveries, clustering, column count,
+  polarization, Chief force) as structured records; sink to Parquet/Arrow so a run becomes a queryable
+  dataset, not console text. Tag every metric with its provenance (`VERBATIM` vs `OPERATIONALIZED`) in the
+  schema, carrying the discipline into the data layer.
+- **Analysis:** feed those datasets to the JVM data stack (Tablesaw / Arrow, or out to Spark for
+  seed-sweeps at fleet scale) so an across-seed distribution study is a query, not a shell loop.
+- **Reasoning agents (the campaign bridge):** the `Steppable` contract is deliberately model-agnostic. A
+  `Steppable` whose `step` calls a model runtime on the JVM (ONNX Runtime, DJL, or a remote inference
+  service) is a *reasoning* agent dropped into the same stigmergic scaffold — the ant replaced by a
+  sample, the pheromone replaced by a reinforced partial solution, the `Schedule` and `Field2D` unchanged.
+
+## The bridge to the campaign
+
+The shared work has two directions at the end of the line, and the Java ladder is a specific on-ramp to both:
+
+- **Stigmergic distillation.** Treat many independent reasoning samples as a swarm and their shared,
+  reinforced-and-decayed intermediate structure as the pheromone field: good partial reasoning is
+  reinforced and followed, weak paths evaporate, a *consensus frontier* emerges that no single sample
+  computed — the foraging trail, one level up. Java's contribution is the **platform view**: once agents
+  are `Steppable`s on virtual threads over a shared `Field2D`, swapping the random-walk ant for a
+  reasoning sample (Rung 4) is a change of implementation, not architecture — and Rung 3 tells you whether
+  a population of thousands of samples is throughput-feasible on the hardware you have. This is the path
+  to a distillation swarm run as a **reproducible scientific experiment** with the full ABM/ML toolchain
+  around it: scheduled, instrumented, logged to Arrow, swept across seeds, analyzed like any other
+  large-scale simulation.
+
+- **Polyagentic security.** A swarm is a threat model *and* a defense: adversarial agents that coordinate
+  through the shared field (poisoning it, exploiting the evaporation rate, forging trails) versus defensive
+  swarms that detect and re-route. On the JVM the `Field2D` write path is exactly where "who is allowed to
+  deposit, and how much" gets enforced — an access question the platform layer can instrument and audit at
+  scale, complementing Rust's compile-time ownership lens with runtime, populated-at-scale observation.
+
+## Provenance discipline (unchanged)
+
+Where the paper (or its primary sources) prints a formula, it is used **verbatim and tagged**; where it
+is qualitative, it is **operationalized and marked** in-source (the wasp Fermi rules and the wolf score
+are verbatim; the termite deposit probability, flocking constants, and the within-tick serialization are
+operationalized). Every rung above carries the tags forward — into the `Schedule`'s ordering epochs, into
+the metric schema, into the benchmark notes. We invent in the gaps, and we say exactly where.
 
 ---
 *Source: H. Van Dyke Parunak, "'Go to the Ant': Engineering Principles from Natural Multi-Agent Systems,"

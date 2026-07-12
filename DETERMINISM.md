@@ -1,5 +1,7 @@
 # Determinism & divergence — when is a swarm reproducible across languages?
 
+> **Java's role.** Java is one of the five *sequential* ports and bit-matches C, Rust, Go, and JS at every seed on the discrete, RNG-driven systems (foraging, sort, termites, wasps) — same SplitMix64 tape, same IEEE-754 `+ - * /`. Java is also where the cross-language check *earned its keep*: `randrange` on signed `Math.floorMod`/`%` silently diverged from unsigned `next() % n` whenever the PRNG's high bit was set (sort read `0.877` where its siblings said `0.876`); the fix was `Long.remainderUnsigned`. On chaotic flocking Java peels off from the C/Rust `libm` pair — the JVM ships its own `StrictMath`/`Math` transcendentals, so ULP-level `sin`/`cos`/`sqrt` differences amplify over 600 ticks. Discrete: bit-exact. Chaotic: reproducible only in distribution.
+
 All six systems run in all six languages share **one PRNG** (SplitMix64, seeded from `--seed`) and the reference's
 exact update order and RNG-consumption order. That was deliberate: it turns the 36 ports into an experiment about
 *when a multi-agent computation is reproducible* — a question that matters the moment you scale from these toy
