@@ -1,0 +1,530 @@
+<title>Go to the Ant — the Rust edition</title>
+<style>
+  :root{
+    --soil:#120d0a; --grid:#2a1f18;
+    --accent:#CE422B; --accent-hot:#E8734D;
+    --paper:#f7f0e9; --ink:#2a201a; --panel:#fdf8f2; --line:#e6d9cc; --muted:#8a7461;
+    --bg:var(--paper); --fg:var(--ink); --card:var(--panel); --border:var(--line); --dim:var(--muted);
+    --serif:"Iowan Old Style","Palatino Linotype",Palatino,"Book Antiqua",Georgia,serif;
+    --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  }
+  @media (prefers-color-scheme:dark){
+    :root{ --bg:#17120f; --fg:#ecdcce; --card:#201812; --border:#33251c; --dim:#a08876; }
+  }
+  :root[data-theme="light"]{ --bg:var(--paper); --fg:var(--ink); --card:var(--panel); --border:var(--line); --dim:var(--muted); }
+  :root[data-theme="dark"]{ --bg:#17120f; --fg:#ecdcce; --card:#201812; --border:#33251c; --dim:#a08876; }
+
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--sans);line-height:1.5;
+    -webkit-font-smoothing:antialiased;padding:clamp(16px,3vw,40px)}
+  .wrap{max-width:1080px;margin:0 auto}
+
+  header{margin-bottom:22px}
+  .eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:.16em;text-transform:uppercase;
+    color:var(--accent);margin:0 0 6px}
+  h1{font-family:var(--serif);font-weight:600;font-size:clamp(32px,6vw,52px);line-height:1.02;
+    margin:0;text-wrap:balance;letter-spacing:-.01em}
+  h1 em{font-style:italic;color:var(--dim);font-size:.62em;font-weight:500}
+  .sub{color:var(--dim);max-width:60ch;margin:10px 0 0;font-size:15px}
+  .sub a{color:var(--accent);text-decoration:none;border-bottom:1px solid color-mix(in oklab,var(--accent) 40%,transparent)}
+
+  .stage{display:grid;grid-template-columns:1fr;gap:16px;margin-top:22px}
+  @media(min-width:820px){.stage{grid-template-columns:1fr 268px}}
+
+  .screen{position:relative;background:var(--soil);border:1px solid var(--border);border-radius:12px;
+    overflow:hidden;box-shadow:0 1px 0 color-mix(in oklab,var(--accent) 18%,transparent) inset,0 12px 30px -18px #000}
+  canvas{display:block;width:100%;height:auto;image-rendering:pixelated}
+  .tabs{position:absolute;top:12px;left:12px;display:flex;flex-wrap:wrap;gap:4px;max-width:calc(100% - 24px);
+    background:#0d0906cc;backdrop-filter:blur(6px);padding:4px;border-radius:9px;border:1px solid #ffffff14}
+  .tabs button{font-family:var(--mono);font-size:12px;letter-spacing:.03em;color:#e0cbb8;background:none;border:0;
+    padding:6px 12px;border-radius:6px;cursor:pointer}
+  .tabs button[aria-selected="true"]{background:var(--accent);color:#1a0d08;font-weight:600}
+  .readout{display:flex;align-items:center;justify-content:space-between;gap:12px;font-family:var(--mono);
+    background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:12px 14px}
+  .readout .big{font-size:30px;font-weight:600;color:var(--accent);font-variant-numeric:tabular-nums;line-height:1}
+  .readout .lbl{font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim);margin-top:3px}
+  .readout canvas{width:118px;height:30px;flex-shrink:0}
+
+  .panel{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:18px;
+    display:flex;flex-direction:column;gap:16px;align-self:start}
+  .row{display:flex;gap:8px}
+  .btn{flex:1;font-family:var(--sans);font-weight:600;font-size:14px;padding:9px;border-radius:8px;cursor:pointer;
+    border:1px solid var(--border);background:var(--bg);color:var(--fg);transition:.15s}
+  .btn:hover{border-color:var(--accent)}
+  .btn.primary{background:var(--accent);border-color:var(--accent);color:#1a0d08}
+  .btn.primary:hover{background:var(--accent-hot)}
+  .ctl label{display:flex;justify-content:space-between;font-size:12px;font-family:var(--mono);color:var(--dim);
+    margin-bottom:5px;letter-spacing:.02em}
+  .ctl label b{color:var(--fg);font-weight:600;font-variant-numeric:tabular-nums}
+  input[type=range]{width:100%;accent-color:var(--accent);cursor:pointer}
+  .toggle{display:flex;align-items:center;justify-content:space-between;font-size:13px}
+  .toggle input{accent-color:var(--accent);width:16px;height:16px;cursor:pointer}
+  .divide{height:1px;background:var(--border)}
+  .legend{font-size:12.5px;color:var(--dim)}
+  .legend h3{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--accent);
+    margin:0 0 8px}
+  .legend ol{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:5px}
+  .legend b{color:var(--fg);font-weight:600}
+  footer{margin-top:22px;color:var(--dim);font-size:12.5px;max-width:70ch}
+  footer code{font-family:var(--mono);color:var(--accent);font-size:.92em}
+  :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+</style>
+
+<div class="wrap">
+  <header>
+    <p class="eyebrow">stigmergy · who owns the field?</p>
+    <h1>Go to the Ant <em>— the Rust edition</em></h1>
+    <p class="sub">Ownership makes the shared field a single-owner resource each agent borrows. Six colonies from
+      H. Van Dyke Parunak's <a href="#">“Go to the Ant” (Annals of Operations Research, 1997)</a> — no agent plans
+      anything. Watch the trail, and the sort, assemble themselves.</p>
+  </header>
+
+  <div class="stage">
+    <div class="screen">
+      <div class="tabs" role="tablist" aria-label="colony">
+        <button id="tabForage" role="tab" aria-selected="true">Foraging</button>
+        <button id="tabSort" role="tab" aria-selected="false">Brood&nbsp;sorting</button>
+        <button id="tabTermite" role="tab" aria-selected="false">Termites</button>
+        <button id="tabWasp" role="tab" aria-selected="false">Wasps</button>
+        <button id="tabFlock" role="tab" aria-selected="false">Flocking</button>
+        <button id="tabWolf" role="tab" aria-selected="false">Wolves</button>
+      </div>
+      <canvas id="world" width="200" height="112"></canvas>
+    </div>
+
+    <aside class="panel">
+      <div class="readout">
+        <div><div class="big" id="metric">0</div><div class="lbl" id="metricLbl">delivered</div></div>
+        <canvas id="spark" width="118" height="30" aria-hidden="true"></canvas>
+      </div>
+      <div class="row">
+        <button class="btn primary" id="play">Pause</button>
+        <button class="btn" id="reset">Reset</button>
+      </div>
+      <div class="ctl" id="antsWrap"><label id="antsLbl">Ants<b id="vAnts">110</b></label>
+        <input type="range" id="ants" min="20" max="260" value="110"></div>
+      <div class="ctl" id="evapCtl"><label>Evaporation<b id="vEvap">1.5%</b></label>
+        <input type="range" id="evap" min="2" max="60" value="15"></div>
+      <div class="ctl"><label>Speed<b id="vSpeed">4×</b></label>
+        <input type="range" id="speed" min="1" max="12" value="4"></div>
+      <label class="toggle" id="wallToggle"><span>Wall with a gap</span>
+        <input type="checkbox" id="wall"></label>
+      <div class="divide"></div>
+      <div class="legend" id="legend"></div>
+    </aside>
+  </div>
+
+  <footer id="foot"></footer>
+</div>
+
+<script>
+const W = document.getElementById('world'), ctx = W.getContext('2d');
+const spark = document.getElementById('spark'), sctx = spark.getContext('2d');
+const css = k => getComputedStyle(document.documentElement).getPropertyValue(k).trim();
+const rand = () => Math.random();
+const DIRS = [[-1,-1],[0,-1],[1,-1],[-1,0],[1,0],[-1,1],[0,1],[1,1]];
+
+/* ---------- §3.1 Foraging: pheromone path-planning ---------- */
+class Forage{
+  constructor(nAnts, evap, wall){
+    this.gw=200; this.gh=112; W.width=this.gw; W.height=this.gh;
+    this.ph=new Float32Array(this.gw*this.gh);       // FOOD trail (carriers lay, searchers read)
+    this.home=new Float32Array(this.gw*this.gh);     // HOME field: nest-sourced, diffused (carriers read)
+    this.obst=new Uint8Array(this.gw*this.gh);
+    this.nest=[16,56]; this.food=[184,56]; this.reg=7; this.evap=evap;
+    if(wall){ const wx=100|0, gap=40+((rand()*30)|0);
+      for(let y=0;y<this.gh;y++) if(Math.abs(y-gap)>7) this.obst[y*this.gw+wx]=1; }
+    this._buildHome();                               // precompute the diffused home gradient (it's static)
+    this.ants=[]; for(let i=0;i<nAnts;i++) this.ants.push({x:this.nest[0],y:this.nest[1],c:false});
+    this.deliv=0; this.metricLbl='delivered'; this.evapCtl=true; this.wallCtl=true;
+  }
+  _buildHome(){ const {gw,gh,home,obst,nest,reg}=this;   // nest emits home scent; diffuse to equilibrium
+    const emit=()=>{ for(let dy=-reg;dy<=reg;dy++) for(let dx=-reg;dx<=reg;dx++){
+      const x=nest[0]+dx, y=nest[1]+dy; if(x>=0&&x<gw&&y>=0&&y<gh&&!obst[y*gw+x]) home[y*gw+x]+=6; } };
+    for(let it=0;it<260;it++){ emit(); const nx=home.slice();
+      for(let y=0;y<gh;y++) for(let x=0;x<gw;x++){ if(obst[y*gw+x]) continue;
+        let s=home[y*gw+x],c=1;
+        for(const [dx,dy] of DIRS){ const xx=x+dx,yy=y+dy;
+          if(xx>=0&&xx<gw&&yy>=0&&yy<gh&&!obst[yy*gw+xx]){ s+=home[yy*gw+xx]; c++; } }
+        nx[y*gw+x]=s/c*0.995; }                        // gentle decay so the gradient stays graded
+      home.set(nx); } }
+  free(x,y){ return x>=0&&x<this.gw&&y>=0&&y<this.gh&&!this.obst[y*this.gw+x]; }
+  near(a,b,c,d){ return Math.abs(a-c)<=this.reg&&Math.abs(b-d)<=this.reg; }
+  step(){
+    const {gw,gh,ph,ants,nest,food}=this;
+    for(const a of ants){
+      let tot=0; const wt=[]; const field = a.c ? this.home : ph;   // carriers read HOME, searchers read FOOD
+      for(const [dx,dy] of DIRS){ const nx=a.x+dx, ny=a.y+dy;
+        if(!this.free(nx,ny)){ wt.push(0); continue; }
+        const w = 1.0 + field[ny*gw+nx]*7.0;                  // Brownian floor + local scent — no global beacon
+        wt.push(w); tot+=w;
+      }
+      if(tot<=0) continue;
+      let r=rand()*tot, k=0; for(;k<8;k++){ r-=wt[k]; if(r<=0) break; }
+      a.x+=DIRS[k][0]; a.y+=DIRS[k][1];
+      if(a.c) ph[a.y*gw+a.x]+=1.0;                            // carriers WRITE the trail
+      if(!a.c && this.near(a.x,a.y,food[0],food[1])) a.c=true;
+      else if(a.c && this.near(a.x,a.y,nest[0],nest[1])){ a.c=false; this.deliv++; }
+    }
+    const keep=1-this.evap; for(let i=0;i<ph.length;i++) ph[i]*=keep;
+    return this.deliv;
+  }
+  draw(){
+    const {gw,gh,ph,obst}=this; const img=ctx.createImageData(gw,gh);
+    let peak=1e-6; for(let i=0;i<ph.length;i++) if(ph[i]>peak) peak=ph[i];
+    for(let i=0;i<ph.length;i++){
+      const t=Math.min(1,ph[i]/peak*2.2); const o=i*4;
+      if(obst[i]){ img.data[o]=51;img.data[o+1]=37;img.data[o+2]=28; }
+      else{ // dark -> rust -> cream heat ramp
+        if(t<.5){ const u=t/.5; img.data[o]=18+u*188; img.data[o+1]=13+u*53; img.data[o+2]=10+u*33; }
+        else{ const u=(t-.5)/.5; img.data[o]=206+u*39; img.data[o+1]=66+u*164; img.data[o+2]=43+u*173; }
+      }
+      img.data[o+3]=255;
+    }
+    ctx.putImageData(img,0,0);
+    const dot=(x,y,r,col)=>{ctx.beginPath();ctx.arc(x,y,r,0,7);ctx.fillStyle=col;ctx.fill();};
+    dot(this.food[0],this.food[1],5,'#F0B27A'); dot(this.nest[0],this.nest[1],5,'#D64545');
+    for(const a of this.ants) dot(a.x,a.y,1.2,a.c?'#E8734D':'#ecdcce');
+  }
+}
+
+/* ---------- §3.2 Brood sorting: (k+/(k++f))^2 pickup, (f/(k-+f))^2 putdown ---------- */
+const TYPE_COL=['#CE422B','#E8935A','#B7761E'];
+class Sort{
+  constructor(nAnts){
+    this.gw=120; this.gh=72; W.width=this.gw; W.height=this.gh;
+    this.g=new Int8Array(this.gw*this.gh).fill(-1);           // -1 empty, 0/1/2 type
+    const cells=[]; for(let i=0;i<this.g.length;i++) cells.push(i);
+    for(let i=cells.length-1;i>0;i--){const j=(rand()*(i+1))|0;[cells[i],cells[j]]=[cells[j],cells[i]];}
+    let ci=0; for(let t=0;t<3;t++) for(let n=0;n<420;n++) this.g[cells[ci++]]=t;
+    this.kp=1.0; this.km=3.0; this.mem=10;
+    this.ants=[]; for(let i=0;i<nAnts;i++) this.ants.push(
+      {x:(rand()*this.gw)|0,y:(rand()*this.gh)|0,carry:-1,m:[]});
+    this.metricLbl='clustering'; this.evapCtl=false; this.wallCtl=false;
+  }
+  frac(m,t){ if(!m.length) return 0; let s=0; for(const v of m) if(v===t) s++; return s/m.length; }
+  step(){
+    const {gw,gh,g}=this;
+    for(const a of this.ants){
+      a.x=(a.x+((rand()*3|0)-1)+gw)%gw; a.y=(a.y+((rand()*3|0)-1)+gh)%gh;
+      const idx=a.y*gw+a.x, here=g[idx];
+      a.m.push(here); if(a.m.length>this.mem) a.m.shift();
+      if(a.carry<0){ if(here>=0){ const p=(this.kp/(this.kp+this.frac(a.m,here)))**2;
+        if(rand()<p){ a.carry=here; g[idx]=-1; } } }
+      else if(here<0){ const p=(this.frac(a.m,a.carry)/(this.km+this.frac(a.m,a.carry)))**2;
+        if(rand()<p){ g[idx]=a.carry; a.carry=-1; } }
+    }
+    return this.clustering();
+  }
+  clustering(){ const {gw,gh,g}=this; let tot=0,acc=0;
+    for(let y=0;y<gh;y++) for(let x=0;x<gw;x++){ const t=g[y*gw+x]; if(t<0) continue;
+      let n=0,s=0; for(const [dx,dy] of DIRS){ const nx=(x+dx+gw)%gw,ny=(y+dy+gh)%gh,v=g[ny*gw+nx];
+        if(v>=0){n++; if(v===t)s++;} } if(n){tot++; acc+=s/n;} }
+    return tot?acc/tot:0;
+  }
+  draw(){ const {gw,gh,g}=this; const img=ctx.createImageData(gw,gh);
+    for(let i=0;i<g.length;i++){ const o=i*4, t=g[i];
+      if(t<0){ img.data[o]=18;img.data[o+1]=13;img.data[o+2]=10; }
+      else{ const c=TYPE_COL[t]; img.data[o]=parseInt(c.slice(1,3),16);
+        img.data[o+1]=parseInt(c.slice(3,5),16); img.data[o+2]=parseInt(c.slice(5,7),16); }
+      img.data[o+3]=255; }
+    ctx.putImageData(img,0,0);
+    for(const a of this.ants){ ctx.fillStyle = a.carry<0? '#ecdcce' : TYPE_COL[a.carry];
+      ctx.fillRect(a.x,a.y,1,1); }
+  }
+}
+
+/* ---------- §3.3 Termites: nest building (mass = structure, scent = decaying bias) ---------- */
+class Termite{
+  constructor(nAnts){
+    this.gw=150; this.gh=84; W.width=this.gw; W.height=this.gh;
+    this.mass=new Float32Array(this.gw*this.gh);
+    this.scent=new Float32Array(this.gw*this.gh);
+    this.decay=0.04; this.metab=0.4; this.maxload=6;
+    this.ants=[]; for(let i=0;i<nAnts;i++)
+      this.ants.push({x:(rand()*this.gw)|0,y:(rand()*this.gh)|0,load:0});
+    this.metricLbl='columns'; this.evapCtl=true; this.wallCtl=false;
+  }
+  step(){
+    const {gw,gh,mass,scent}=this;
+    for(const a of this.ants){
+      a.load=Math.min(this.maxload,a.load+this.metab);            // rule 1: metabolize waste
+      let tot=0; const wt=[];                                     // rule 2: prefer strongest local scent
+      for(const [dx,dy] of DIRS){ const nx=(a.x+dx+gw)%gw, ny=(a.y+dy+gh)%gh;
+        const w=1+scent[ny*gw+nx]*3; wt.push([w,nx,ny]); tot+=w; }
+      let r=rand()*tot; for(const [w,nx,ny] of wt){ r-=w; if(r<=0){a.x=nx;a.y=ny;break;} }
+      const idx=a.y*gw+a.x;                                       // rule 3: deposit ~ load + local scent
+      const p=Math.min(1,0.01+0.55*(a.load/this.maxload)+0.20*scent[idx]);
+      if(a.load>=this.maxload || rand()<p){ mass[idx]+=a.load; scent[idx]+=a.load; a.load=0; }
+    }
+    const keep=1-this.decay; for(let i=0;i<scent.length;i++) scent[i]*=keep;  // pheromone decays
+    return this.columns();
+  }
+  columns(){ const {gw,gh,mass}=this; let peak=1e-6;
+    for(let i=0;i<mass.length;i++) if(mass[i]>peak) peak=mass[i];
+    const cut=peak*0.15; let c=0;
+    for(let y=0;y<gh;y++) for(let x=0;x<gw;x++){ const v=mass[y*gw+x]; if(v<cut) continue;
+      let mx=true; for(const [dx,dy] of DIRS) if(v<mass[((y+dy+gh)%gh)*gw+((x+dx+gw)%gw)]){mx=false;break;}
+      if(mx) c++; }
+    return c;
+  }
+  draw(){ const {gw,gh,mass}=this; const img=ctx.createImageData(gw,gh);
+    let peak=1e-6; for(let i=0;i<mass.length;i++) if(mass[i]>peak) peak=mass[i];
+    for(let i=0;i<mass.length;i++){ const t=Math.min(1,mass[i]/peak); const o=i*4;
+      if(t<.5){ const u=t/.5; img.data[o]=18+u*188; img.data[o+1]=13+u*53; img.data[o+2]=10+u*33; }
+      else{ const u=(t-.5)/.5; img.data[o]=206+u*39; img.data[o+1]=66+u*164; img.data[o+2]=43+u*173; }
+      img.data[o+3]=255; }
+    ctx.putImageData(img,0,0);
+    for(const a of this.ants){ ctx.fillStyle='#ecdcce'; ctx.fillRect(a.x,a.y,1,1); }
+  }
+}
+
+/* ---------- §3.4 Wasps: task differentiation (NON-spatial — a population landscape) ---------- */
+class Wasp{
+  constructor(n){
+    W.width=760; W.height=430; this.n=n; this.FSCALE=15; this.SIGMAX=4;
+    this.h=1.1; this.hf=3.0; this.q=0.10; this.xi=0.02; this.phi=0.012; this.mob=1.6;
+    this.leak=0.004; this.gen=0.005;                            // §4.6 entropy leak: force dissipates+regenerates
+    this.appetite=0.075*n; this.D=2.0;
+    this.F=[]; this.sig=[];
+    for(let i=0;i<n;i++){ this.F.push(1+(rand()-.5)*0.1); this.sig.push(1.6+(rand()-.5)*0.1); }
+    this.metricLbl='foragers'; this.evapCtl=false; this.wallCtl=false;
+  }
+  step(){
+    const {F,sig,n}=this;
+    for(let p=0;p<(n/3|0);p++){                                  // rule 1: face-offs (force conserved)
+      const i=rand()*n|0, j=rand()*n|0; if(i===j) continue;
+      const pj=1/(1+Math.exp(this.h*(F[i]-F[j])));
+      let w,l; if(rand()<pj){w=j;l=i;}else{w=i;l=j;}
+      const t=Math.min(this.q,F[l]); F[w]+=t; F[l]-=t;
+    }
+    for(let k=0;k<n;k++) F[k]=Math.max(0,F[k]*(1-this.leak)+this.gen);   // §4.6 leak bounds the hierarchy
+    let Wk=0, Fmax=1;                                            // rules 2-3: demand + foraging
+    for(let k=0;k<n;k++) if(F[k]>Fmax) Fmax=F[k];
+    for(let k=0;k<n;k++){
+      const pf=1/(1+Math.exp(this.hf*(sig[k]-this.D)));
+      const dom=Math.pow(F[k]/Fmax,4);                          // the top wasp is away dominating -> forages less
+      if(rand()<pf*(1-dom)){ sig[k]=Math.max(0,sig[k]-this.xi); if(F[k]>this.mob) Wk++; }
+      else sig[k]=Math.min(this.SIGMAX,sig[k]+this.phi);
+    }
+    this.D=Math.max(0,this.D+this.appetite-Wk);
+    return this.foragers();
+  }
+  chief(){ let c=0; for(let k=1;k<this.n;k++) if(this.F[k]>this.F[c]) c=k; return c; }
+  smed(){ return [...this.sig].sort((a,b)=>a-b)[this.n>>1]; }
+  foragers(){ const ch=this.chief(), sm=this.smed(); let f=0;
+    for(let k=0;k<this.n;k++) if(k!==ch && this.F[k]>this.mob && this.sig[k]<=sm) f++; return f; }
+  draw(){
+    const cw=760, ch=430, PAD=54;
+    ctx.fillStyle='#120d0a'; ctx.fillRect(0,0,cw,ch);
+    // axes
+    ctx.strokeStyle='#4a3628'; ctx.lineWidth=1;
+    ctx.beginPath(); ctx.moveTo(PAD,ch-PAD); ctx.lineTo(cw-24,ch-PAD);
+    ctx.moveTo(PAD,ch-PAD); ctx.lineTo(PAD,20); ctx.stroke();
+    ctx.fillStyle='#a08876'; ctx.font='16px ui-monospace,monospace';
+    ctx.fillText('Force  →  (mobility)', cw/2-70, ch-18);
+    ctx.save(); ctx.translate(20,ch/2+70); ctx.rotate(-Math.PI/2);
+    ctx.fillText('Foraging threshold  ↑', 0,0); ctx.restore();
+    // mobility divider
+    const mx = PAD + (this.mob/this.FSCALE)*(cw-24-PAD);
+    ctx.strokeStyle='#3a2a20'; ctx.setLineDash([4,4]);
+    ctx.beginPath(); ctx.moveTo(mx,20); ctx.lineTo(mx,ch-PAD); ctx.stroke(); ctx.setLineDash([]);
+    ctx.fillStyle='#a08876'; ctx.font='13px ui-monospace'; ctx.fillText('mobile →', mx+6, 34);
+    // wasps
+    const chW=this.chief(), sm=this.smed();
+    const X=f=>PAD+(f/this.FSCALE)*(cw-24-PAD), Y=s=>ch-PAD-(s/this.SIGMAX)*(ch-PAD-20);
+    let counts={C:0,F:0,N:0};
+    for(let k=0;k<this.n;k++){
+      let col,r; if(k===chW){col='#F0B27A';r=7;counts.C++;}
+      else if(this.F[k]>this.mob && this.sig[k]<=sm){col='#CE422B';r=4.5;counts.F++;}
+      else{col='#8A6B4F';r=3.5;counts.N++;}
+      ctx.beginPath(); ctx.arc(X(this.F[k]),Y(this.sig[k]),r,0,7); ctx.fillStyle=col; ctx.fill();
+      if(k===chW){ ctx.strokeStyle='#F5E6D8'; ctx.lineWidth=1.5; ctx.stroke(); }
+    }
+    // caste legend chips on the plot
+    ctx.font='14px ui-monospace';
+    const chips=[['#F0B27A','Chief '+counts.C],['#CE422B','Foragers '+counts.F],['#8A6B4F','Nurses '+counts.N]];
+    chips.forEach(([c,t],i)=>{ const yy=30+i*22;
+      ctx.fillStyle=c; ctx.beginPath(); ctx.arc(cw-150,yy-4,5,0,7); ctx.fill();
+      ctx.fillStyle='#ecdcce'; ctx.fillText(t, cw-138, yy); });
+  }
+}
+
+/* ---------- §3.5 Flocking: Reynolds' three rules ---------- */
+class Flock{
+  constructor(n){ W.width=760; W.height=430; this.WW=760; this.HH=430; this.n=n;
+    this.perc=44; this.sr=17; this.wsep=1.3; this.wali=1.5; this.wcoh=0.85; this.vmax=2.4; this.turn=0.35;
+    this.px=[];this.py=[];this.vx=[];this.vy=[];
+    for(let i=0;i<n;i++){ this.px.push(rand()*this.WW); this.py.push(rand()*this.HH);
+      const a=rand()*6.283; this.vx.push(Math.cos(a)*this.vmax); this.vy.push(Math.sin(a)*this.vmax); }
+    this.metricLbl='polarization'; this.evapCtl=false; this.wallCtl=false;
+  }
+  step(){ const {px,py,vx,vy,n}=this; const nvx=vx.slice(),nvy=vy.slice();
+    const p2=this.perc**2, s2=this.sr**2;
+    for(let i=0;i<n;i++){ let sx=0,sy=0,ax=0,ay=0,cx=0,cy=0,c=0;
+      for(let j=0;j<n;j++){ if(i===j) continue;
+        let dx=px[j]-px[i],dy=py[j]-py[i];
+        dx-=this.WW*Math.round(dx/this.WW); dy-=this.HH*Math.round(dy/this.HH);   // toroidal
+        const d2=dx*dx+dy*dy; if(d2>p2) continue; c++;
+        ax+=vx[j];ay+=vy[j]; cx+=dx;cy+=dy;                              // rules 2,3
+        if(d2<s2&&d2>1e-9){ sx-=dx/d2; sy-=dy/d2; } }                    // rule 1
+      if(c){ ax/=c;ay/=c;cx/=c;cy/=c;
+        const u=(x,y)=>{const m=Math.hypot(x,y); return m>1e-9?[x/m,y/m]:[0,0];};
+        const [su,sv]=u(sx,sy),[au,av]=u(ax-vx[i],ay-vy[i]),[cu,cv]=u(cx,cy);   // NORMALIZE each urge
+        nvx[i]=vx[i]+this.turn*(this.wsep*su+this.wali*au+this.wcoh*cu);
+        nvy[i]=vy[i]+this.turn*(this.wsep*sv+this.wali*av+this.wcoh*cv);
+        const sp=Math.hypot(nvx[i],nvy[i])||1; nvx[i]=nvx[i]/sp*this.vmax; nvy[i]=nvy[i]/sp*this.vmax; } }
+    for(let i=0;i<n;i++){ vx[i]=nvx[i];vy[i]=nvy[i];
+      px[i]=(px[i]+vx[i]+this.WW)%this.WW; py[i]=(py[i]+vy[i]+this.HH)%this.HH; }
+    let mx=0,my=0; for(let i=0;i<n;i++){mx+=vx[i];my+=vy[i];}
+    return Math.hypot(mx,my)/n/this.vmax;                               // polarization
+  }
+  draw(){ ctx.fillStyle='#120d0a'; ctx.fillRect(0,0,760,430);
+    for(let i=0;i<this.n;i++){ ctx.save(); ctx.translate(this.px[i],this.py[i]);
+      ctx.rotate(Math.atan2(this.vy[i],this.vx[i])); ctx.fillStyle='#E8935A';
+      ctx.beginPath(); ctx.moveTo(7,0); ctx.lineTo(-5,3.5); ctx.lineTo(-5,-3.5); ctx.closePath(); ctx.fill();
+      ctx.restore(); } }
+}
+
+/* ---------- §3.6 Wolves: surround the prey via S = d(moose) − k·d(wolf) ---------- */
+class Wolves{
+  constructor(nw){ W.width=760; W.height=430; this.WW=760; this.HH=430; this.n=6;   // the paper's six wolves
+    this.vm=4.6; this.vw=7.6; this.k=1.12;
+    this.mx=this.WW/2; this.my=this.HH/2; this.wx=[];this.wy=[];
+    for(let i=0;i<nw;i++){ this.wx.push(rand()*this.WW); this.wy.push(rand()*this.HH); }
+    this.metricLbl='escape gap °'; this.evapCtl=false; this.wallCtl=false;
+  }
+  cands(x,y,sp){ const o=[[x,y]]; for(let i=0;i<24;i++){ const a=i*6.283/24;
+    o.push([x+sp*Math.cos(a),y+sp*Math.sin(a)]); } return o; }
+  step(){
+    let best=[this.mx,this.my],bd=-1;                                   // rule 1: moose flees nearest wolf
+    for(const [cx,cy] of this.cands(this.mx,this.my,this.vm)){ if(cx<0||cx>=this.WW||cy<0||cy>=this.HH) continue;
+      let d=1e9; for(let i=0;i<this.n;i++){ const dd=Math.hypot(cx-this.wx[i],cy-this.wy[i]); if(dd<d)d=dd; }
+      if(d>bd){ bd=d; best=[cx,cy]; } }
+    this.mx=best[0]; this.my=best[1];
+    const nx=[],ny=[];
+    for(let i=0;i<this.n;i++){ let bs=1e9,bw=[this.wx[i],this.wy[i]];    // rule 2: min S
+      for(const [cx,cy] of this.cands(this.wx[i],this.wy[i],this.vw)){ if(cx<0||cx>=this.WW||cy<0||cy>=this.HH) continue;
+        const dm=Math.hypot(cx-this.mx,cy-this.my);
+        let doo=1e9; for(let j=0;j<this.n;j++){ if(j!==i){ const dd=Math.hypot(cx-this.wx[j],cy-this.wy[j]); if(dd<doo)doo=dd; } }
+        if(doo===1e9) doo=0; const s=dm-this.k*doo; if(s<bs){ bs=s; bw=[cx,cy]; } }
+      nx.push(bw[0]); ny.push(bw[1]); }
+    this.wx=nx; this.wy=ny;
+    const angs=[]; for(let i=0;i<this.n;i++) angs.push(Math.atan2(this.wy[i]-this.my,this.wx[i]-this.mx));
+    angs.sort((a,b)=>a-b); let mg=0;
+    for(let i=0;i<this.n;i++){ let g=((angs[(i+1)%this.n]-angs[i])%6.283+6.283)%6.283; if(g>mg)mg=g; }
+    return mg*180/Math.PI;
+  }
+  draw(){ ctx.fillStyle='#120d0a'; ctx.fillRect(0,0,760,430);
+    ctx.strokeStyle='#33251c';
+    for(let i=0;i<this.n;i++){ ctx.beginPath(); ctx.moveTo(this.mx,this.my); ctx.lineTo(this.wx[i],this.wy[i]); ctx.stroke(); }
+    ctx.fillStyle='#D64545'; ctx.beginPath(); ctx.arc(this.mx,this.my,9,0,7); ctx.fill();     // moose
+    ctx.fillStyle='#F5E6D8'; ctx.font='11px ui-monospace'; ctx.fillText('moose',this.mx-16,this.my-13);
+    for(let i=0;i<this.n;i++){ ctx.fillStyle='#E8935A'; ctx.beginPath(); ctx.arc(this.wx[i],this.wy[i],5.5,0,7); ctx.fill(); } }
+}
+
+/* ---------- driver ---------- */
+let sim, mode='forage', playing=true, hist=[];
+const $=id=>document.getElementById(id);
+const P={ants:110,evap:.015,speed:4,wall:false};
+
+function build(){
+  hist=[];
+  sim = mode==='forage' ? new Forage(P.ants,P.evap,P.wall)
+      : mode==='sort'   ? new Sort(P.ants)
+      : mode==='termite'? new Termite(P.ants)
+      : mode==='wasp'   ? new Wasp(P.ants)
+      : mode==='flock'  ? new Flock(P.ants)
+      :                   new Wolves(P.ants);
+  $('metricLbl').textContent = sim.metricLbl;
+  $('evapCtl').style.display = sim.evapCtl?'':'none';
+  $('wallToggle').style.display = sim.wallCtl?'':'none';
+  $('antsLbl').innerHTML = POP_LABEL[mode]+'<b id="vAnts">'+P.ants+'</b>';
+  $('antsWrap').style.display = (mode==='wolf')?'none':'';   // wolves fixed at the paper's 6
+  legend();
+}
+function legend(){
+  const forage=`<h3>The five rules · foraging</h3><ol>
+    <li><b>Avoid</b> obstacles.</li>
+    <li><b>Wander</b>, biased toward nearby pheromone (else Brownian).</li>
+    <li>Carrying food, <b>deposit</b> pheromone at a steady rate.</li>
+    <li>At food, empty-handed, <b>pick it up</b>.</li>
+    <li>At the nest, carrying, <b>drop it</b>.</li></ol>`;
+  const sort=`<h3>The four rules · sorting</h3><ol>
+    <li><b>Wander</b> the nest; keep a short memory (~10).</li>
+    <li>On an item, <b>pick up</b> with p=(k₊/(k₊+f))².</li>
+    <li>On bare ground, <b>drop</b> with p=(f/(k₋+f))².</li>
+    <li>f = fraction of memory of the same type. Rare→grab, crowded→drop.</li></ol>`;
+  const termite=`<h3>The three rules · building</h3><ol>
+    <li><b>Metabolize</b> waste — it's the building material, and it carries pheromone.</li>
+    <li><b>Wander</b> toward the strongest local pheromone.</li>
+    <li><b>Deposit</b> stochastically — likelier with a bigger load and denser local scent.</li>
+    <li>Scent decays, so fresh piles smell strongest → deposits climb into <b>columns</b>.</li></ol>`;
+  const wasp=`<h3>The three rules · castes</h3><ol>
+    <li><b>Face-off:</b> j beats i with p = 1/(1+e^(h·(Fᵢ−Fⱼ))); a quantum of Force passes loser→winner.</li>
+    <li><b>Demand</b> grows, minus the work foragers bring: D ← D + appetite − W.</li>
+    <li><b>Forage?</b> p = 1/(1+e^(h·(σⱼ−D))); foraging lowers σ, idling raises it.</li>
+    <li>Identical wasps → <b>Chief</b> (high F, high σ) · <b>Foragers</b> (high F, low σ) · <b>Nurses</b> (low F).</li></ol>`;
+  const flock=`<h3>The three rules · boids</h3><ol>
+    <li><b>Separation</b> — steer away from birds that get too close.</li>
+    <li><b>Alignment</b> — match the heading of nearby birds.</li>
+    <li><b>Cohesion</b> — steer toward the local flock's centre.</li>
+    <li>Each bird senses only neighbours; one coherent flock <b>emerges</b>. Polarization → 1.</li></ol>`;
+  const wolf=`<h3>The two rules · the hunt</h3><ol>
+    <li><b>Moose</b> — step to wherever it's farthest from the nearest wolf.</li>
+    <li><b>Wolves</b> — minimise S = d(moose) − k·d(nearest wolf): close to prey, far from each other.</li>
+    <li>Attraction + mutual repulsion → the pack <b>surrounds</b> the moose. No radios.</li></ol>`;
+  $('legend').innerHTML = {forage,sort,termite,wasp,flock,wolf}[mode];
+}
+function tick(){
+  if(playing){ let m=0; for(let s=0;s<P.speed;s++) m=sim.step();
+    const FMT={forage:v=>v, sort:v=>v.toFixed(3), termite:v=>v, wasp:v=>v, flock:v=>v.toFixed(2), wolf:v=>Math.round(v)};
+    const SS ={forage:1, sort:220, termite:1, wasp:1, flock:220, wolf:0.6};
+    $('metric').textContent = FMT[mode](m);
+    hist.push(m*SS[mode]); if(hist.length>118) hist.shift();
+  }
+  sim.draw(); drawSpark();
+  requestAnimationFrame(tick);
+}
+function drawSpark(){
+  sctx.clearRect(0,0,118,30); if(hist.length<2) return;
+  const mx=Math.max(...hist,1);
+  sctx.beginPath();
+  hist.forEach((v,i)=>{ const x=i/117*118, y=30-(v/mx)*28-1; i?sctx.lineTo(x,y):sctx.moveTo(x,y); });
+  sctx.strokeStyle=css('--accent-hot'); sctx.lineWidth=1.5; sctx.stroke();
+  const lx=117/117*118, ly=30-(hist[hist.length-1]/mx)*28-1;
+  sctx.beginPath(); sctx.arc(lx,ly,2,0,7); sctx.fillStyle=css('--accent-hot'); sctx.fill();
+}
+
+// controls
+$('play').onclick=()=>{ playing=!playing; $('play').textContent=playing?'Pause':'Play'; };
+$('reset').onclick=build;
+$('tabForage').onclick=()=>switchMode('forage');
+$('tabSort').onclick=()=>switchMode('sort');
+$('tabTermite').onclick=()=>switchMode('termite');
+$('tabWasp').onclick=()=>switchMode('wasp');
+$('tabFlock').onclick=()=>switchMode('flock');
+$('tabWolf').onclick=()=>switchMode('wolf');
+const DEFAULT_ANTS={forage:110,sort:60,termite:90,wasp:80,flock:90,wolf:6};
+const POP_LABEL={forage:'Ants',sort:'Ants',termite:'Termites',wasp:'Wasps',flock:'Birds',wolf:'Wolves'};
+function switchMode(m){ if(m===mode) return; mode=m;
+  for(const [t,id] of [['forage','tabForage'],['sort','tabSort'],['termite','tabTermite'],
+                       ['wasp','tabWasp'],['flock','tabFlock'],['wolf','tabWolf']])
+    $(id).setAttribute('aria-selected', m===t);
+  $('ants').value = DEFAULT_ANTS[m]; P.ants=+$('ants').value; $('vAnts').textContent=P.ants;
+  build();
+}
+$('ants').oninput=e=>{P.ants=+e.target.value;$('vAnts').textContent=P.ants;build();};
+$('evap').oninput=e=>{P.evap=+e.target.value/1000;$('vEvap').textContent=(P.evap*100).toFixed(1)+'%';build();};
+$('speed').oninput=e=>{P.speed=+e.target.value;$('vSpeed').textContent=P.speed+'×';};
+$('wall').onchange=e=>{P.wall=e.target.checked;build();};
+
+$('foot').innerHTML='Sims render in JS here; the compiled, borrow-checked Rust port '+
+  '(<code>forage.rs</code> / <code>sort.rs</code> / …) is the canonical one beside this file. '+
+  'The one design subtlety, learned by debugging to zero deliveries: '+
+  '<code>searchers read the trail; carriers write it</code> — the same read/write asymmetry as any stigmergic system.';
+
+build();
+requestAnimationFrame(tick);
+</script>

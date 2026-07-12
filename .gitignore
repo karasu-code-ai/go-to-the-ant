@@ -1,2 +1,11 @@
 __pycache__/
 *.pyc
+
+# rust build artifacts
+rust/forage
+rust/sort
+rust/termites
+rust/wasps
+rust/flocking
+rust/wolves
+*.o
