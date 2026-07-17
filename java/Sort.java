@@ -12,7 +12,7 @@
  *
  * The four local rules (§3.2), preserved verbatim in spirit:
  *   1. Wander randomly around the nest (dx,dy each in {-1,0,1}, toroidal).
- *   2. Keep a SHORT memory (~10 steps) of the object types recently seen (empties included).
+ *   2. Keep a SHORT memory (~15 steps) of the object types recently seen (empties included).
  *   3. Not carrying + at an object: pick it up stochastically.
  *          p(pickup) = (k+/(k+ + f))^2      -- PAPER §3.2 VERBATIM
  *      where f is the fraction of short memory holding the SAME type. (Rare type -> f small
@@ -20,8 +20,8 @@
  *   4. Carrying + on empty ground: drop it stochastically.
  *          p(putdown) = (f/(k- + f))^2      -- PAPER §3.2 VERBATIM
  *      (Surrounded by the same type -> f large -> drop ~surely.)
- *   Constants (paper): k+ ~ 1, k- ~ 3 -- OPERATIONALIZED as kp=1.0, km=3.0; k- must exceed
- *   k+ or clusters dissolve faster than they form. mem ~ 10 (OPERATIONALIZED as memory=10).
+ *   Constants (paper): k+ 0.1, k- 0.3 (Deneubourg 1991; Parunak's summary rounds to ~1, ~3) -- Deneubourg 1991 actuals: kp=0.1, km=0.3; k- must exceed
+ *   k+ or clusters dissolve faster than they form. mem=15 (Deneubourg 1991) (Deneubourg 1991: memory=15).
  *
  * Clustering = mean fraction of the 8 toroidal neighbours that share an item's type
  * (OPERATIONALIZED quality metric: 0 = scattered, 1 = perfectly sorted).
@@ -210,7 +210,7 @@ public class Sort {
     static void run(int ticks, int nAnts, long seed, boolean verbose) {
         Nest nest = new Nest(40, 24, 90, seed);
         SortAnt[] ants = new SortAnt[nAnts];
-        for (int i = 0; i < nAnts; i++) ants[i] = new SortAnt(nest, 10, 1.0, 3.0);
+        for (int i = 0; i < nAnts; i++) ants[i] = new SortAnt(nest, 15, 0.1, 0.3);
 
         if (verbose) {
             System.out.println("BEFORE (random scatter):\n");

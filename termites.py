@@ -8,9 +8,11 @@ local rules (§3.3):
   3. Each step, decide stochastically whether to deposit the current load. p(deposit) rises with the LOCAL
      pheromone density AND the amount carried. A full termite drops even with no nearby deposit; a termite in
      a very high local concentration drops even a small load.
-Because pheromone DECAYS, the freshest deposits (the centre of a growing pile) smell strongest, so piles
-climb upward into COLUMNS rather than spreading; two nearby columns each pull the other's visitors, bending
-subsequent deposits into an ARCH. No termite plans the mound.
+The pheromone field is dissipative in Parunak's §4.6 sense: it both DIFFUSES (Brownian spreading, a local
+nearest-neighbour stencil) AND DECAYS every tick. Spreading gives each pile some BREADTH — a graded skirt —
+so the freshest deposits (the centre of a growing pile) still smell strongest and piles climb into COLUMNS,
+while each column's skirt reaches a little across open space so two nearby columns each pull the other's
+visitors, bending subsequent deposits into an ARCH. No termite plans the mound.
 
 Here (top-down 2D): `mound` = persistent structural mass (what you see); `scent` = decaying pheromone (what
 biases wandering). Emergence = scattered dabs self-concentrate into a handful of tall columns.
@@ -23,18 +25,31 @@ DIRS = [(-1, -1), (0, -1), (1, -1), (-1, 0), (1, 0), (-1, 1), (0, 1), (1, 1)]
 
 
 class Mound:
-    def __init__(self, w=58, h=34, seed=0, decay=0.02):
+    def __init__(self, w=58, h=34, seed=0, decay=0.02, D=0.010):
         self.w, self.h = w, h
         self.rng = random.Random(seed)
         self.mass = [[0.0] * w for _ in range(h)]          # persistent structure (viz)
         self.scent = [[0.0] * w for _ in range(h)]         # decaying pheromone (bias)
+        self._buf = [[0.0] * w for _ in range(h)]          # double-buffer for the diffusion pass
         self.decay = decay
+        self.D = D                                         # diffusion rate (Brownian spreading)
 
-    def evaporate(self):
-        keep = 1 - self.decay
-        for row in self.scent:
-            for x in range(self.w):
-                row[x] *= keep
+    def field_step(self):
+        """Process_e (§4.6): the scent DIFFUSES then EVAPORATES. Spreading is a local
+        nearest-neighbour stencil — physically what Brownian motion is — that turns point
+        deposits into a graded field agents orient to; decay is the forgetting half. Double-
+        buffered so every cell reads the OLD scent; draws NO rng (bit-identity preserved).
+            new = old + D*(mean8 - old);  then *= (1 - decay)."""
+        s, buf = self.scent, self._buf
+        w, h, D, keep = self.w, self.h, self.D, 1 - self.decay
+        for y in range(h):
+            for x in range(w):
+                acc = 0.0
+                for dx, dy in DIRS:
+                    acc += s[(y + dy) % h][(x + dx) % w]
+                c = s[y][x]
+                buf[y][x] = (c + D * (acc / 8.0 - c)) * keep
+        self.scent, self._buf = buf, s                     # swap buffers
 
     def columns(self):
         """Count distinct COLUMNS = local maxima above a fraction of the tallest peak."""
@@ -89,7 +104,7 @@ def run(ticks=40000, n=70, seed=0, decay=0.02, verbose=True):
     for t in range(ticks):
         for tm in termites:
             tm.step()
-        mound.evaporate()
+        mound.field_step()
         if t % max(1, ticks // 12) == 0:
             hist.append(mound.columns()[0])
     if verbose:

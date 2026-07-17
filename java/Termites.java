@@ -64,26 +64,41 @@ public class Termites {
         final int w, h;
         final SplitMix64 rng;
         final double[][] mass;    // persistent structure (viz); never decays
-        final double[][] scent;   // decaying pheromone (biases the walk + deposit)
+        double[][] scent;         // dissipative pheromone (biases walk + deposit): diffuses AND decays
+        double[][] buf;           // double-buffer for the diffusion pass
         final double decay;
+        final double d;           // diffusion rate (Brownian spreading, §4.6)
 
         Mound(int w, int h, long seed, double decay) {
             this.w = w; this.h = h;
             this.rng = new SplitMix64(seed);
             this.mass = new double[h][w];
             this.scent = new double[h][w];
+            this.buf = new double[h][w];
             this.decay = decay;
+            this.d = 0.010;
         }
 
-        // The scent field dissipates every tick (the entropy leak that makes piles CLIMB
-        // rather than spread — fresh deposits at a pile's core stay the strongest smell).
-        void evaporate() {
+        // The field law (§4.6 entropy leak): scent DIFFUSES (Brownian spreading, a local
+        // nearest-neighbour stencil) then EVAPORATES. Spreading gives each pile breadth —
+        // the substrate for column skirts and inter-column arches — while fresh cores still
+        // out-smell the spread. Double-buffered so every cell reads the OLD scent; draws NO
+        // rng, so cross-port bit-identity is preserved. new = old + d*(mean8 - old); *=(1-decay).
+        void fieldStep() {
             double keep = 1.0 - decay;
             for (int y = 0; y < h; y++) {
                 for (int x = 0; x < w; x++) {
-                    scent[y][x] *= keep;
+                    double acc = 0.0;
+                    for (int[] dd : DIRS) {
+                        int nx = ((x + dd[0]) % w + w) % w;
+                        int ny = ((y + dd[1]) % h + h) % h;
+                        acc += scent[ny][nx];
+                    }
+                    double c = scent[y][x];
+                    buf[y][x] = (c + d * (acc / 8.0 - c)) * keep;
                 }
             }
+            double[][] tmp = scent; scent = buf; buf = tmp;
         }
 
         // Count distinct COLUMNS = toroidal local maxima with mass above 0.15*peak.
@@ -195,7 +210,7 @@ public class Termites {
         int step = Math.max(1, ticks / 12);
         for (int t = 0; t < ticks; t++) {
             for (Termite tm : termites) tm.step();
-            mound.evaporate();
+            mound.fieldStep();
             if (t % step == 0) {
                 if (hist.length() > 0) hist.append(' ');
                 hist.append((int) mound.columns()[0]);

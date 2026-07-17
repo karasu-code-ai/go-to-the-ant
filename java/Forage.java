@@ -136,6 +136,35 @@ public class Forage {
                 System.arraycopy(nxt[y], 0, homePher[y], 0, w);
             }
         }
+
+        // The food trail SPREADS a little (Brownian breadth, §3.1/§4.6): nearby sub-trails
+        // "merge together into a trace." Local stencil over FREE neighbours only (obstacle-aware,
+        // non-toroidal); draws no rng. new = old + D*(mean_free_nbrs - old). Jacobi over a copy.
+        void diffuseFood(double D) {
+            if (D <= 0.0) return;
+            double[][] nxt = new double[h][w];
+            for (int y = 0; y < h; y++) {
+                System.arraycopy(foodPher[y], 0, nxt[y], 0, w);
+            }
+            for (int y = 0; y < h; y++) {
+                for (int x = 0; x < w; x++) {
+                    if (!free(x, y)) continue;
+                    double s = 0.0;
+                    int c = 0;
+                    for (int[] d : DIRS) {
+                        int xx = x + d[0], yy = y + d[1];
+                        if (free(xx, yy)) { s += foodPher[yy][xx]; c += 1; }
+                    }
+                    if (c > 0) {
+                        double cur = foodPher[y][x];
+                        nxt[y][x] = cur + D * (s / c - cur);
+                    }
+                }
+            }
+            for (int y = 0; y < h; y++) {
+                System.arraycopy(nxt[y], 0, foodPher[y], 0, w);
+            }
+        }
     }
 
     static final class Ant {
@@ -225,7 +254,7 @@ public class Forage {
         System.out.print(out);
     }
 
-    static void run(int ticks, int nAnts, double evap, double deposit, long seed, boolean useWall) {
+    static void run(int ticks, int nAnts, double evap, double deposit, long seed, boolean useWall, double diffuse) {
         World world = new World(56, 28, seed, useWall, 2);
         Ant[] ants = new Ant[nAnts];
         for (int i = 0; i < nAnts; i++) ants[i] = new Ant(world);
@@ -235,6 +264,7 @@ public class Forage {
         for (int t = 0; t < ticks; t++) {
             world.emitAndDiffuseHome();              // nest broadcasts the home gradient
             for (Ant a : ants) a.step(deposit);
+            world.diffuseFood(diffuse);              // the food trail spreads a little (breadth)
             world.evaporate(evap);
             if (t % step == 0) {
                 if (history.length() > 0) history.append(' ');
@@ -250,7 +280,7 @@ public class Forage {
 
     public static void main(String[] args) {
         int ticks = 3000, ants = 90;
-        double evap = 0.015, deposit = 1.0;
+        double evap = 0.015, deposit = 1.0, diffuse = 0.03;
         long seed = 0;
         boolean useWall = false;
         for (int i = 0; i < args.length; i++) {
@@ -258,11 +288,12 @@ public class Forage {
                 case "--ticks": ticks = Integer.parseInt(args[++i]); break;
                 case "--ants":  ants  = Integer.parseInt(args[++i]); break;
                 case "--evap":  evap  = Double.parseDouble(args[++i]); break;
+                case "--diffuse": diffuse = Double.parseDouble(args[++i]); break;
                 case "--seed":  seed  = Long.parseLong(args[++i]); break;
                 case "--wall":  useWall = true; break;
                 default: /* ignore unknown args */ break;
             }
         }
-        run(ticks, ants, evap, deposit, seed, useWall);
+        run(ticks, ants, evap, deposit, seed, useWall, diffuse);
     }
 }

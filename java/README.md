@@ -33,8 +33,9 @@ count, and a 20-point S-curve sample of cumulative deliveries across the run.
 ## Emergence signature
 
 Deliveries stay at 0 for the first few hundred ticks (the trail must form),
-then rise on an S-curve to some tens of deliveries by tick 3000. Sample runs:
-seed 0 → 46 deliveries, seed 1 → 60. A pheromone trail links nest and food in
+then rise on an S-curve to some tens of deliveries by tick 3000 (the trail also
+diffuses a little — breadth, §3.1/§4.6 — so nearby sub-trails merge). Sample runs:
+seed 0 → 50 deliveries, seed 1 → 64. A pheromone trail links nest and food in
 the render.
 
 ---
@@ -50,10 +51,11 @@ and a schedule steps a swarm of individually-instantiated `Termite` objects.
 
 Two fields, three local rules: termites metabolize waste (the building material),
 wander biased toward strong local scent, and stochastically deposit their load with
-a probability that rises with local scent AND load. Scent decays each tick, so fresh
-deposits at a pile's core stay strongest — piles CLIMB into columns rather than
-spreading. The deposit-probability formula is OPERATIONALIZED (the paper gives no
-formula, only "probability rises with local density and load").
+a probability that rises with local scent AND load. Each tick the scent field both
+**diffuses** (a local Brownian stencil) **and decays** (§4.6), so fresh deposits at a
+pile's core stay strongest — piles CLIMB into columns — while spreading lends each pile
+some breadth (the arch substrate). The deposit-probability formula is OPERATIONALIZED
+(the paper gives no formula, only "probability rises with local density and load").
 
 Dependency-free: standard library only, same SplitMix64 PRNG as the foraging port.
 
@@ -78,11 +80,12 @@ sample of `columns(t)` across the run.
 
 ## Emergence signature
 
-Scattered dabs self-concentrate into a HANDFUL of distinct columns (~5–10), one
+Scattered dabs self-concentrate into a HANDFUL of distinct columns (~4–10), one
 very tall (tallest mass in the tens of thousands). The column count spikes early
-as noise, then settles as columns compete and merge. Sample runs (this port's
-SplitMix64 PRNG, so numbers differ from the Python reference by design):
-seed 0 → 6 columns, tallest ≈ 109616; seed 1 → 6 columns, tallest ≈ 78642.
+as noise, then settles as columns compete and merge. Sample runs (the shared
+SplitMix64 PRNG makes these **bit-identical to the sibling C/Rust/Go/JS ports**;
+they differ from the Python/Mersenne-Twister reference by design):
+seed 0 → 5 columns, tallest ≈ 103360; seed 1 → 4 columns, tallest ≈ 56810.
 
 ---
 
@@ -90,7 +93,7 @@ seed 0 → 6 columns, tallest ≈ 109616; seed 1 → 6 columns, tallest ≈ 7864
 
 A faithful port of Deneubourg et al.'s ant brood/corpse sorting, from the same
 Parunak (1997) survey (§3.2). Grid 40×24; 90 items each of types A/B/C (270
-total) scattered at random; 40 ants; short memory = 10; k+ = 1.0, k- = 3.0;
+total) scattered at random; 40 ants; short memory = 15; k+ = 0.1, k- = 0.3 (Deneubourg 1991);
 120000 ticks. Each ant wanders (dx,dy ∈ {-1,0,1}, toroidal), records every cell
 it visits (empties included) into a bounded memory, and picks up / puts down
 stochastically per the paper's two probability formulas
@@ -194,10 +197,12 @@ proportions.
 the brood demand `D`, and a schedule steps individually-instantiated `Wasp`
 objects each tick.
 
-**Provenance:** the two Fermi formulas are PAPER VERBATIM. The entropy-leak force
-bound (leak/gen replacing an ad-hoc cap) and `dominance=(F/Fmax)^4` (a spatiality
-proxy that restores the Chief's high threshold) are OPERATIONALIZED — see the
-header comment in `Wasps.java`.
+**Provenance:** the two Fermi formulas are PAPER VERBATIM. The genuine §4.6 entropy
+leak is Rule 1's conservative force TRANSFER; the force-relaxation bound (leak/gen
+replacing an ad-hoc cap) is a SEPARATE inference beyond Parunak. The LOCAL
+`dominance=(F/seenmax)^4` spatiality proxy — each wasp's own fading memory of the top
+force faced, no global max — restores the Chief's high threshold. All OPERATIONALIZED —
+see the header comment in `Wasps.java`.
 
 ## Build
 
@@ -223,10 +228,10 @@ sample across the run.
 From 80 genetically-identical wasps, THREE castes self-separate: exactly **1
 Chief** (high force ~9–10, HIGH threshold ~4), a small **Forager** band (~3–5,
 force ~5, threshold ~0), and a **Nurse** majority (~75, force ~1). Chief force
-≫ population mean (~1.25). Sample runs (this port's SplitMix64 PRNG, so numbers
-differ from the Python reference by design): seed 0 → Chief F=9.78 σ=4.00, 4
-Foragers F≈4.88, 75 Nurses F≈0.94; seed 1 → Chief F=9.59 σ=4.00, 3 Foragers
-F≈5.52, 76 Nurses F≈0.97.
+≫ population mean. Sample runs (bit-identical to the sibling C/Rust/Go/JS ports
+via the shared SplitMix64; they differ from the Python/MT reference by design):
+seed 0 → Chief F=9.78 σ=4.00, 5 Foragers F≈5.15, 74 Nurses F≈0.88; seed 1 →
+Chief F=9.59 σ=4.00, 4 Foragers F≈5.75, 75 Nurses F≈0.90.
 
 ---
 
