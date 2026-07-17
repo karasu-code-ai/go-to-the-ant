@@ -47,6 +47,7 @@
 #define H 28
 #define N (W * H)
 #define REGION 2
+#define DIFFUSE_D 0.03   /* food-trail diffusion rate (Brownian breadth, §3.1/§4.6) */
 
 // 8 neighbours in THIS order (matches the Python DIRS exactly).
 __device__ __constant__ int DX[8] = {-1, 0, 1, -1, 1, -1, 0, 1};
@@ -111,6 +112,25 @@ __global__ void k_diffuse_home(const double *home, double *home_new,
         if (d_free(obstacle, xx, yy)) { s += home[yy * W + xx]; c += 1; }
     }
     home_new[cell] = s / (double)c;
+}
+
+// 1.5. The food trail SPREADS a little (Brownian breadth, §3.1/§4.6): nearby sub-trails
+//      "merge together into a trace." One cell per thread, Jacobi (reads `food`, writes
+//      `food_new`). Free neighbours only; new = old + D*(mean_free_nbrs - old).
+__global__ void k_diffuse_food(const double *food, double *food_new,
+                               const uint8_t *obstacle, double D) {
+    int cell = blockIdx.x * blockDim.x + threadIdx.x;
+    if (cell >= N) return;
+    int x = cell % W, y = cell / W;
+    if (!d_free(obstacle, x, y)) { food_new[cell] = food[cell]; return; }
+    double s = 0.0;
+    int c = 0;
+    for (int k = 0; k < 8; ++k) {
+        int xx = x + DX[k], yy = y + DY[k];
+        if (d_free(obstacle, xx, yy)) { s += food[yy * W + xx]; c += 1; }
+    }
+    double cur = food[cell];
+    food_new[cell] = c ? cur + D * (s / (double)c - cur) : cur;
 }
 
 // 2. One thread per ant. All ants read the SAME field snapshot; deposits and the
@@ -290,6 +310,10 @@ int main(int argc, char **argv) {
                                    d_food2, d_obstacle, d_food_qty, d_deliveries,
                                    n_ants, deposit);
         { double *tmp = d_food; d_food = d_food2; d_food2 = tmp; }   // new food field
+
+        // 2.5 diffuse the food trail a little (breadth); Jacobi read d_food -> d_food2, swap
+        k_diffuse_food<<<cellBlocks, 256>>>(d_food, d_food2, d_obstacle, DIFFUSE_D);
+        { double *tmp = d_food; d_food = d_food2; d_food2 = tmp; }   // diffused food field
 
         // 3. evaporate both fields (the entropy leak)
         k_evaporate<<<cellBlocks, 256>>>(d_food, d_home, keep);

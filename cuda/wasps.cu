@@ -20,13 +20,13 @@
 // low threshold), Nurses (majority, low force).
 //
 // OPERATIONALIZED provenance (preserved from the Python source):
-//   - ENTROPY LEAK (§4.6): F[k] = max(0, F[k]*(1-leak)+gen) replaces an ad-hoc force
-//     CAP. A steady leak+gen bounds the hierarchy naturally (equilibrium mean ~ gen/
-//     leak) so no one super-wasp runs away. It shifts the force distribution, which
-//     couples into the demand/threshold balance — a real, documented tradeoff.
-//   - SPATIALITY PROXY: dominance = (F/Fmax)^4 suppresses only the single top wasp's
-//     foraging (the Chief "wanders and faces off", is rarely near the brood), which
-//     restores the Chief's HIGH threshold. F~0.7*Fmax foragers are barely touched.
+//   - FORCE RELAXATION: F[k] = max(0, F[k]*(1-leak)+gen). The genuine §4.6 entropy leak
+//     is Rule 1's conservative force TRANSFER; this leak/gen is a SEPARATE mean-reversion
+//     (inference beyond Parunak, plausibly a Theraulaz element) replacing an ad-hoc force
+//     CAP. Empirically required so no one super-wasp runs away.
+//   - LOCAL SPATIALITY PROXY: dominance = (F/seenmax)^4, where seenmax is each wasp's OWN
+//     fading memory of the top force it has faced (NO global max — the k_fmax reduction is
+//     gone). ~1 only for the wasp atop its own encounters (the Chief), restoring its HIGH threshold.
 //
 // ---------------------------------------------------------------------------
 // THE CUDA LENS (this port's distinct view of the system):
@@ -90,19 +90,24 @@ __host__ static inline double sm64_uniform(uint64_t *state, double a, double b) 
 // Rule 1: FACE-OFFS. SERIAL by nature (random pair, force conserved, read-after-
 // write on F, one shared RNG stream). One thread performs all n//3 duels in the
 // Python loop order. OPERATIONALIZED DEVIATION #1.
-__global__ void k_faceoffs(double *F, uint64_t *faceoff_state, int n,
-                           double h, double q) {
+__global__ void k_faceoffs(double *F, double *seenmax, uint64_t *faceoff_state, int n,
+                           double h, double q, double seendecay) {
     uint64_t st = *faceoff_state;
     int rounds = n / 3;
     for (int r = 0; r < rounds; ++r) {
         int i = (int)sm64_randrange(&st, (uint64_t)n);   // Python: i = rng.randrange(n)
         int j = (int)sm64_randrange(&st, (uint64_t)n);   // Python: j = rng.randrange(n)
         if (i == j) continue;
-        double pj = 1.0 / (1.0 + exp(h * (F[i] - F[j]))); // PAPER §3.4 VERBATIM
+        double fi = F[i], fj = F[j];
+        double pj = 1.0 / (1.0 + exp(h * (fi - fj)));     // PAPER §3.4 VERBATIM
         int w, l;
         if (sm64_float(&st) < pj) { w = j; l = i; } else { w = i; l = j; }
         double t = q < F[l] ? q : F[l];                   // t = min(q, F[loser])
         F[w] += t; F[l] -= t;                             // force conserved
+        double m = fi > fj ? fi : fj;                     // LOCAL: fading memory of the strongest force faced
+        double di = seenmax[i] * seendecay, dj = seenmax[j] * seendecay;
+        seenmax[i] = m > di ? m : di;
+        seenmax[j] = m > dj ? m : dj;
     }
     *faceoff_state = st;
 }
@@ -115,25 +120,20 @@ __global__ void k_leak(double *F, int n, double leak, double gen) {
     F[k] = v > 0.0 ? v : 0.0;
 }
 
-// Fmax reduction (n is tiny; a single-thread scan keeps it simple and exact).
-__global__ void k_fmax(const double *F, int n, double *fmax_out) {
-    double m = F[0];
-    for (int k = 1; k < n; ++k) if (F[k] > m) m = F[k];
-    *fmax_out = m > 0.0 ? m : 1.0;                        // Python: max(F) or 1.0
-}
-
 // Rules 2 & 3: FORAGING + demand contribution. One thread per wasp. Reads the same
-// pre-forage snapshot of D and Fmax; the shared brood-work W is an atomicAdd race
-// across all foragers (the CUDA lens made literal). OPERATIONALIZED DEVIATION #2.
-__global__ void k_forage(double *F, double *sig, uint64_t *state, int n,
+// pre-forage snapshot of D; the dominance term is now LOCAL (each wasp's own seenmax,
+// no global-max reduction — the k_fmax kernel is gone). The shared brood-work W is an
+// atomicAdd race across all foragers (the CUDA lens made literal). OPERATIONALIZED DEVIATION #2.
+__global__ void k_forage(double *F, double *sig, const double *seenmax, uint64_t *state, int n,
                          double hf, double xi, double phi, double mob,
-                         double D, double Fmax, int *W) {
+                         double D, int *W) {
     int k = blockIdx.x * blockDim.x + threadIdx.x;
     if (k >= n) return;
     uint64_t st = state[k];
     double pf = 1.0 / (1.0 + exp(hf * (sig[k] - D)));    // PAPER §3.4 VERBATIM
-    double ratio = F[k] / Fmax;
-    double dom = ratio * ratio * ratio * ratio;          // (F/Fmax)^4 spatiality proxy
+    double sm = seenmax[k] > 0.0 ? seenmax[k] : 1.0;
+    double ratio = F[k] / sm;
+    double dom = ratio * ratio * ratio * ratio;          // (F/seenmax)^4 LOCAL spatiality proxy
     if (sm64_float(&st) < pf * (1.0 - dom)) {            // stimulated AND not dominating
         double s = sig[k] - xi;                          // learns: threshold drops
         sig[k] = s > 0.0 ? s : 0.0;
@@ -249,16 +249,17 @@ int main(int argc, char **argv) {
     double D = 2.0;
 
     // ---- device buffers ----
-    double *d_F, *d_sig, *d_fmax;
+    double *d_F, *d_sig, *d_seenmax;
     uint64_t *d_state, *d_faceoff;
     int *d_W;
     CK(cudaMalloc(&d_F, n * sizeof(double)));
     CK(cudaMalloc(&d_sig, n * sizeof(double)));
-    CK(cudaMalloc(&d_fmax, sizeof(double)));
+    CK(cudaMalloc(&d_seenmax, n * sizeof(double)));
     CK(cudaMalloc(&d_state, n * sizeof(uint64_t)));
     CK(cudaMalloc(&d_faceoff, sizeof(uint64_t)));
     CK(cudaMalloc(&d_W, sizeof(int)));
     CK(cudaMemcpy(d_F, h_F, n * sizeof(double), cudaMemcpyHostToDevice));
+    CK(cudaMemcpy(d_seenmax, h_F, n * sizeof(double), cudaMemcpyHostToDevice)); // seenmax starts = F
     CK(cudaMemcpy(d_sig, h_sig, n * sizeof(double), cudaMemcpyHostToDevice));
     CK(cudaMemcpy(d_state, h_state, n * sizeof(uint64_t), cudaMemcpyHostToDevice));
     CK(cudaMemcpy(d_faceoff, &h_faceoff, sizeof(uint64_t), cudaMemcpyHostToDevice));
@@ -269,16 +270,15 @@ int main(int argc, char **argv) {
     int sampleEvery = ticks / 12; if (sampleEvery < 1) sampleEvery = 1;
     int histF[64], histN[64], nhist = 0;
 
+    const double seendecay = 0.998;   // the seenmax memory fades (robustness)
     for (int t = 0; t < ticks; ++t) {
-        // (1) face-offs — SERIAL single-thread kernel (OPERATIONALIZED #1)
-        k_faceoffs<<<1, 1>>>(d_F, d_faceoff, n, h, quantum);
-        // (2) entropy leak — parallel
+        // (1) face-offs — SERIAL single-thread kernel; also updates the per-wasp seenmax (OPERATIONALIZED #1)
+        k_faceoffs<<<1, 1>>>(d_F, d_seenmax, d_faceoff, n, h, quantum, seendecay);
+        // (2) force relaxation — parallel
         k_leak<<<blocks, 128>>>(d_F, n, leak, gen);
-        // (3) foraging + demand — parallel, W via atomicAdd (OPERATIONALIZED #2)
-        k_fmax<<<1, 1>>>(d_F, n, d_fmax);
-        double h_fmax; CK(cudaMemcpy(&h_fmax, d_fmax, sizeof(double), cudaMemcpyDeviceToHost));
+        // (3) foraging + demand — parallel, LOCAL dominance (per-wasp seenmax), W via atomicAdd (OPERATIONALIZED #2)
         int zeroW = 0; CK(cudaMemcpy(d_W, &zeroW, sizeof(int), cudaMemcpyHostToDevice));
-        k_forage<<<blocks, 128>>>(d_F, d_sig, d_state, n, hf, xi, phi, mob, D, h_fmax, d_W);
+        k_forage<<<blocks, 128>>>(d_F, d_sig, d_seenmax, d_state, n, hf, xi, phi, mob, D, d_W);
         int W; CK(cudaMemcpy(&W, d_W, sizeof(int), cudaMemcpyDeviceToHost));
         D = D + appetite - (double)W;
         if (D < 0.0) D = 0.0;                            // D = max(0, D + appetite - W)
@@ -327,7 +327,7 @@ int main(int argc, char **argv) {
     printf("\n");
     landscape(h_F, h_sig, n);
 
-    cudaFree(d_F); cudaFree(d_sig); cudaFree(d_fmax);
+    cudaFree(d_F); cudaFree(d_sig); cudaFree(d_seenmax);
     cudaFree(d_state); cudaFree(d_faceoff); cudaFree(d_W);
     free(h_F); free(h_sig); free(h_state);
     return 0;

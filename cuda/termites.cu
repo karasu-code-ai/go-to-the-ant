@@ -57,6 +57,7 @@
 #define W 58
 #define H 34
 #define N (W * H)
+#define DIFFUSE_D 0.010   /* diffusion rate (Brownian spreading, §4.6) */
 
 // 8 neighbours in THIS order (matches the Python DIRS exactly):
 // (-1,-1),(0,-1),(1,-1),(-1,0),(1,0),(-1,1),(0,1),(1,1)
@@ -134,11 +135,23 @@ __global__ void k_step(int *tx, int *ty, double *load, uint64_t *tstate,
     tx[i] = x; ty[i] = y; load[i] = ld; tstate[i] = st;
 }
 
-// Evaporate the scent field (the entropy leak), one cell per thread.
-__global__ void k_evaporate(double *scent, double keep) {
+// The field law (§4.6 entropy leak), one cell per thread: scent DIFFUSES (Brownian
+// spreading, an 8-neighbour Jacobi stencil) then EVAPORATES. Spreading gives each pile
+// breadth — the substrate for column skirts and inter-column arches. Reads the shared
+// pre-update snapshot `in`, writes `out` — distinct-by-design (parallel Jacobi, unlike
+// the sequential CPU ports). new = old + D*(mean8 - old); then *= (1 - decay).
+__global__ void k_field_step(const double *in, double *out, double keep, double D) {
     int cell = blockIdx.x * blockDim.x + threadIdx.x;
     if (cell >= N) return;
-    scent[cell] *= keep;
+    int x = cell % W, y = cell / W;
+    double acc = 0.0;
+    for (int d = 0; d < 8; d++) {
+        int nx = (x + DX[d] + W) % W;
+        int ny = (y + DY[d] + H) % H;
+        acc += in[ny * W + nx];
+    }
+    double c = in[cell];
+    out[cell] = (c + D * (acc / 8.0 - c)) * keep;
 }
 
 // ---- host helpers ----------------------------------------------------------
@@ -255,8 +268,9 @@ int main(int argc, char **argv) {
                                    d_scent, d_scent2, d_mass, n, metab, maxload);
         { double *tmp = d_scent; d_scent = d_scent2; d_scent2 = tmp; }  // new scent field
 
-        // evaporate the scent (the entropy leak)
-        k_evaporate<<<cellBlocks, 256>>>(d_scent, keep);
+        // diffuse + evaporate the scent (§4.6: spread into a gradient field, then decay)
+        k_field_step<<<cellBlocks, 256>>>(d_scent, d_scent2, keep, DIFFUSE_D);
+        { double *tmp = d_scent; d_scent = d_scent2; d_scent2 = tmp; }  // diffused+evaporated field
 
         if (t % stepEvery == 0 && nhist < 64) {
             CK(cudaMemcpy(h_mass, d_mass, N * sizeof(double), cudaMemcpyDeviceToHost));

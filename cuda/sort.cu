@@ -6,15 +6,15 @@
 // Faithful port of the authoritative Python reference (brood_sorting.py). The four
 // LOCAL ant rules are preserved verbatim in spirit:
 //   1. Wander randomly (dx,dy each in {-1,0,1}, toroidal grid).
-//   2. Keep a SHORT memory (~10 steps) of the object types recently seen (empties
+//   2. Keep a SHORT memory (~15 steps) of the object types recently seen (empties
 //      included).
 //   3. Not carrying + on an object: pick it up stochastically.
 //        p(pickup)  = (k+/(k+ + f))^2   -- PAPER §3.2 VERBATIM
 //   4. Carrying + on empty ground: drop it stochastically.
 //        p(putdown) = (f/(k- + f))^2    -- PAPER §3.2 VERBATIM
 //   where f = fraction of short-term memory holding the SAME type.
-//   Constants (paper): k+ ~ 1, k- ~ 3  (k- must exceed k+ or clusters dissolve
-//   faster than they form).  -- PAPER §3.2 VERBATIM (kp=1 < km=3, mem~10)
+//   Constants (paper): k+ 0.1, k- 0.3 (Deneubourg 1991; Parunak's summary rounds to ~1, ~3)  (k- must exceed k+ or clusters dissolve
+//   faster than they form).  -- PAPER §3.2 VERBATIM (kp=0.1 < km=0.3, mem=15)
 // Local concentrations of like items emerge, retain members, and attract more;
 // stochastic pickup lets separate clusters merge. Sorting EMERGES; no ant compares
 // the whole nest. Clustering = mean fraction of the 8 toroidal neighbours that
@@ -54,7 +54,7 @@
 #define N_PER_TYPE 90            // 90 each of A/B/C -> 270 items
 #define NTYPES 3
 #define EMPTY (-1)
-#define MEMLEN 10                // short memory ~10 steps  -- PAPER §3.2 VERBATIM
+#define MEMLEN 15                // Deneubourg 1991: m=15 (Parunak's summary rounds to ~10)
 
 // ---- SplitMix64 (identical algorithm across all ports) --------------------
 __host__ __device__ static inline uint64_t sm64_next(uint64_t *state) {
@@ -172,7 +172,7 @@ static void render(const int *grid) {
 
 int main(int argc, char **argv) {
     int ticks = 120000, n_ants = 40;
-    double kp = 1.0, km = 3.0;      // PAPER §3.2 VERBATIM: k+=1 < k-=3
+    double kp = 0.1, km = 0.3;      // Deneubourg 1991: k+=0.1 < k-=0.3 (Parunak's summary rounds to 1<3)
     uint64_t seed = 0;
     for (int i = 1; i < argc; ++i) {
         if (!strcmp(argv[i], "--seed") && i + 1 < argc) seed = strtoull(argv[++i], 0, 10);

@@ -14,7 +14,7 @@ we invented a form faithful to the stated dependencies and *say so at the line* 
 | § | System | VERBATIM from paper | OPERATIONALIZED (paper qualitative) | TUNED free params | Emergence reproduced |
 |---|---|---|---|---|---|
 | 3.1 | Foraging | the 5 rules; evaporation; "weighted toward scent" | scent weight ×7, homing pull ×4, region sizes | ants, evaporation | ✓ trail = MST; S-curve deliveries; routes a wall gap |
-| 3.2 | Brood sorting | **`p(pickup)=(k₊/(k₊+f))²`, `p(putdown)=(f/(k₋+f))²`, k₊=1<k₋=3, mem≈10** — all printed | (nothing beyond the printed formulas) | ants, ticks | ✓ clustering 0.35→0.92 |
+| 3.2 | Brood sorting | **`p(pickup)=(k₊/(k₊+f))²`, `p(putdown)=(f/(k₋+f))²`** (formulas printed) | **constants k₊=0.1, k₋=0.3, mem=15 — Deneubourg 1991's actual values (the paper's §3.2 summary rounds them to ~1/~3/~10)** | ants, ticks | ✓ clustering 0.35→~0.95 |
 | 3.3 | Termites | the 3 rules + the 3 stated dependencies | **the whole deposit `p` — paper gives NO formula** | decay, metab, appetite | ✓ scattered dabs → distinct columns |
 | 3.4 | Wasps | **face-off `p=1/(1+e^(h(Fᵢ−Fⱼ)))`, forage `p=1/(1+e^(h(σⱼ−D)))`, σ learn/forget, D recurrence** | work `W`=count of mobile foragers (paper: "work by foragers", no formula); force-cap; force→mobility gate | appetite, k-caps, h | ✓ 1 Chief + ~7 Foragers + ~72 Nurses |
 | 3.5 | Flocking | the 3 Reynolds rules (separation/alignment/cohesion) | perception radius, sep distance, 3 weights, "normalize each urge" | weights, radius | ✓ polarization 0.03→0.93 |
@@ -44,8 +44,16 @@ None of these primary sources were consulted during this recreation — it was b
 
 ---
 
-## Applying the Engineering Principles to our own recreations (2026-07-12)
-A first "feet-wet" pass.
+## Applying the Engineering Principles to our own recreations
+
+**Round two.** A later fidelity pass corrected four systems against the primary sources: brood-sort constants →
+Deneubourg's actual 0.1 / 0.3 / 15; termites → a §4.6 diffusion (breadth) atop restored agent density; foraging →
+trail breadth (the "paths have some breadth and merge" mechanism); wasps → the global-max dominance replaced by a
+per-agent LOCAL signal (each wasp's own fading memory of the strongest force it has faced), and the leak/gen term
+relabelled a *force-relaxation* — the genuine §4.6 entropy leak is Rule 1's conservative force flow. All of these
+are in the code; the earlier "feet-wet" narrative below is the first pass they built on.
+
+### A first "feet-wet" pass.
 
 ### ✅ Foraging — removed a genuine principle violation (§4.3.3 Small in Scope + §4.6 multi-marker)
 The v1 carrier used a **global homing beacon** (it computed the direction to the nest — non-local knowledge

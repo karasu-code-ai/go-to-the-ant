@@ -39,8 +39,9 @@ food `F`, obstacle `|`, ants `o`).
 
 ## Emergence signature (seed 0)
 `deliveries == 0` for the first several hundred ticks (the trail has to form),
-then a clear S-curve rise to tens of deliveries by tick 3000 (~48 at seed 0,
-~50 at seed 1), with a visible pheromone band connecting nest and food.
+then a clear S-curve rise to tens of deliveries by tick 3000 (~51 at seed 0,
+~51 at seed 1; the trail also diffuses a little — breadth, §3.1/§4.6), with a
+visible pheromone band connecting nest and food.
 
 ---
 
@@ -49,7 +50,7 @@ then a clear S-curve rise to tens of deliveries by tick 3000 (~48 at seed 0,
 A faithful CUDA port of Parunak's ant brood-sorting swarm ("'Go to the Ant'",
 §3.2; Deneubourg et al. 1991). Behaviour matches the authoritative Python
 reference `brood_sorting.py`. Grid 40x24, 90 items each of types A/B/C scattered
-by a shuffle, 40 ants with short memory (~10), `k+=1 < k-=3`, 120000 ticks.
+by a shuffle, 40 ants with short memory (m=15), `k+=0.1 < k-=0.3` (Deneubourg 1991), 120000 ticks.
 Clustering = mean fraction of the 8 toroidal neighbours that share an item's type.
 
 ## The CUDA lens
@@ -67,7 +68,7 @@ from `--seed`), mutating the one shared grid concurrently. `atomicCAS`
 (claim-the-cell) keeps items conserved but makes the exact tick-order of
 colliding ants depend on GPU scheduling — the grid is **not** bit-identical to
 the sequential ports and may vary slightly run to run. The emergent signature is
-robust and reproduces. The two probability formulas are PAPER §3.2 VERBATIM.
+robust and reproduces. The two probability formulas are §3.2 formulas verbatim; constants from Deneubourg 1991.
 
 ## Build
 
@@ -76,14 +77,14 @@ robust and reproduces. The two probability formulas are PAPER §3.2 VERBATIM.
 ## Run
 
     ./sort --seed 0                         # defaults: --ticks 120000 --ants 40
-    ./sort --seed 1 --ticks 120000 --ants 40 --kp 1.0 --km 3.0
+    ./sort --seed 1 --ticks 120000 --ants 40 --kp 0.1 --km 0.3
 
 Prints ASCII before/after grids (`.` empty, `A`/`B`/`C` items), the initial and
 final clustering, and 12 clustering(t) samples across the run.
 
 ## Emergence signature (brood sorting)
 Initial clustering ~0.26-0.35 (random scatter) rising **monotonically** to
-~0.85-0.92 by the end: seed 0 `0.263 -> 0.891`, seed 1 `0.268 -> 0.844`. The
+~0.92-0.97 by the end: seed 0 `0.263 -> 0.972`, seed 1 `0.268 -> 0.965`. The
 after-grid shows well-separated A / B / C clusters. (Initial value is ~0.26
 rather than Python's ~0.35 because the cross-port SplitMix64 shuffle differs from
 CPython's PRNG; the rising signature is identical.)
@@ -101,7 +102,8 @@ Both fields — `mass` (persistent structure) and `scent` (decaying pheromone) �
 **are** GPU global memory. Termites **are** threads (one per agent). Deposits
 **are** `atomicAdd` race-resolution: several termites reinforcing the same growing
 column in the same instant is exactly the stigmergic superposition the paper
-describes, made literal by the hardware. Evaporation runs one-cell-per-thread.
+describes, made literal by the hardware. The field law (§4.6: scent **diffuses**
+via an 8-neighbour Jacobi stencil, then **evaporates**) runs one-cell-per-thread.
 
 ## Operationalized deviations
 - **Formula (from the Python, preserved):** the deposit probability
@@ -131,9 +133,9 @@ Prints an ASCII mass render (shades `" .:-=+*#%@"`), the distinct column count a
 tallest column mass, and `columns(t)` sampled every `ticks/12` ticks.
 
 ## Emergence signature
-Scattered dabs self-concentrate into a **handful** of distinct columns (~5-10),
-one very tall (tallest mass in the tens of thousands). CUDA seed 0: 5 columns,
-tallest ~121192. Seed 1: 5 columns, tallest ~122239. (Exact values differ from
+Scattered dabs self-concentrate into a **handful** of distinct columns (~4-10),
+one very tall (tallest mass in the tens of thousands). CUDA seed 0: 4 columns,
+tallest ~57128. Seed 1: 4 columns, tallest ~55983. (Exact values differ from
 the sequential ports by design — see the parallel-update deviation above.)
 
 ---
@@ -146,8 +148,8 @@ Foragers, a Nurse majority — with nobody computing the proportions. Behaviour
 matches the authoritative Python reference `wasps.py`.
 
 ## The CUDA lens
-State lives in GPU global memory (`F[]`, `sig[]`). The parallel rules — the
-entropy leak and the foraging/threshold response — run **one thread per wasp**,
+State lives in GPU global memory (`F[]`, `sig[]`). The parallel rules — the force
+relaxation and the foraging/threshold response — run **one thread per wasp**,
 and the shared brood-work counter `W` is a literal `atomicAdd` race across all
 foragers. But the FACE-OFF spine is irreducibly serial: each duel reads the
 freshest force of a **random pair**, transfers a quantum between exactly that
@@ -160,15 +162,17 @@ is forged one duel at a time.
    RNG stream, matching the Python loop order — force conservation between a random
    pair with read-after-write on `F` is a true serial dependency.
 2. **Foraging runs in parallel**: each wasp reads the same pre-forage snapshot of
-   `D` and `Fmax`, updates its own `sig`, and adds to `W` via `atomicAdd`. Each
+   `D` and its OWN local `seenmax` (the global-max `k_fmax` kernel is gone), updates
+   its own `sig`, and adds to `W` via `atomicAdd`. Each
    wasp carries its own SplitMix64 stream derived from `--seed`, so the foraging
    draws come from per-wasp streams rather than the single Python stream. The RNG
    *algorithm* is identical to the other ports; the partition differs (parallelism).
    The 3-caste signature is robust and unchanged.
 
-Provenance preserved from the Python: the two Fermi formulas are PAPER VERBATIM;
-the entropy-leak force bound (`leak`/`gen`) and `dominance=(F/Fmax)^4` spatiality
-proxy are OPERATIONALIZED (see the source header).
+Provenance preserved from the Python: the two Fermi formulas are PAPER VERBATIM; the
+force-relaxation bound (`leak`/`gen`, an inference beyond Parunak — NOT the §4.6 leak,
+which is Rule 1's force flow) and the LOCAL `dominance=(F/seenmax)^4` spatiality proxy
+(each wasp's own fading memory of the top force faced, no global max) are OPERATIONALIZED.
 
 ## Build
 
