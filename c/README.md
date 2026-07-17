@@ -34,7 +34,8 @@ and an ASCII render of the `food_pher` trail.
 With 90 ants over 3000 ticks: deliveries stay at 0 for the first few hundred
 ticks (the trail must form first), then rise on an S-curve to some tens of
 deliveries, with a visible pheromone trail connecting nest and food.
-Observed: seed 0 -> 46, seed 1 -> 60.
+The food trail also DIFFUSES a little (breadth, §3.1/§4.6) so nearby sub-trails
+merge into a trace. Observed: seed 0 -> 50, seed 1 -> 64.
 
 ---
 
@@ -42,7 +43,7 @@ Observed: seed 0 -> 46, seed 1 -> 60.
 
 A faithful C port of Parunak's brood-sorting swarm (§3.2, after Deneubourg et
 al. 1991). Grid 40x24; 90 items each of types A/B/C (270 total) scattered by a
-shuffle; 40 ants with a 10-cell memory; k+ = 1, k- = 3; 120000 ticks.
+shuffle; 40 ants with a 15-cell memory; k+ = 0.1, k- = 0.3 (Deneubourg 1991); 120000 ticks.
 
 **The lens (C):** the nest is a raw `unsigned char` array — one byte per cell,
 0 for empty or a type tag A/B/C. An ant is three ints plus a ring buffer of the
@@ -76,7 +77,7 @@ clustering(t) sample.
 
 Initial clustering ~0.33 (a random scatter), rising monotonically to ~0.85-0.92
 as like items coalesce into single-type clusters.
-Observed: seed 0 -> 0.263 -> 0.876, seed 1 -> 0.268 -> 0.903 (seeds 0/1 happen
+Observed: seed 0 -> 0.263 -> 0.939, seed 1 -> 0.268 -> 0.987 (seeds 0/1 happen
 to draw slightly low initial scatters; seeds 2-5 start ~0.33).
 
 ---
@@ -95,10 +96,12 @@ toroidal grid. Dependency-free — C standard library only.
 Three local rules: metabolize waste into carried load; wander over the 8
 toroidal neighbours weighted by `1 + scent*3`; stochastically deposit with
 `p = min(1, 0.01 + 0.55*(load/maxload) + 0.20*local_scent)` (a full termite
-always drops). `scent` evaporates each tick, so the freshest core of a pile
-smells strongest and piles climb into columns. The deposit formula is
-OPERATIONALIZED — the paper gives only "probability rises with local density
-AND load", no formula.
+always drops). The field law is dissipative in Parunak's §4.6 sense: `scent`
+**diffuses** (a local 8-neighbour Brownian stencil) **and evaporates** each tick,
+so the freshest core of a pile smells strongest and piles climb into columns —
+while spreading gives each pile some **breadth** (the arch substrate). The deposit
+formula is OPERATIONALIZED — the paper gives only "probability rises with local
+density AND load", no formula.
 
 ## Build
 
@@ -122,7 +125,7 @@ Scattered dabs self-concentrate into a HANDFUL of distinct columns (~4-10),
 one very tall (tallest mass in the tens of thousands). `columns(t)` rises to
 ~13-14 early then descends as piles merge into a few winners.
 Observed (SplitMix64 stream, matches the sibling ports, not Python's RNG):
-seed 0 -> 5 columns, tallest 96053; seed 1 -> 4 columns, tallest 133850.
+seed 0 -> 5 columns, tallest 103360; seed 1 -> 4 columns, tallest 56810.
 
 ---
 
@@ -139,12 +142,13 @@ library only.
 
 Three interacting rules, applied per tick in this order: (1) `n/3` face-offs
 where `j` beats `i` with Fermi `p = 1/(1 + e^(h*(F_i - F_j)))` and a force
-quantum passes loser->winner (force conserved); (2) an entropy leak
-`F = max(0, F*(1-leak) + gen)` that bounds the hierarchy naturally
-(OPERATIONALIZED, §4.6 — replaces an ad-hoc force cap); (3) brood stimulation +
-foraging with Fermi `p = 1/(1 + e^(hf*(sig - D)))`, suppressed for the top wasp
-by a spatiality proxy `dom = (F/Fmax)^4` (OPERATIONALIZED). Both Fermi formulas
-are PAPER VERBATIM.
+quantum passes loser->winner (force conserved — THIS is the genuine §4.6 entropy
+leak); (2) a force RELAXATION `F = max(0, F*(1-leak) + gen)` that bounds the
+hierarchy naturally (OPERATIONALIZED, an inference beyond Parunak — not the §4.6
+leak — replacing an ad-hoc force cap); (3) brood stimulation + foraging with Fermi
+`p = 1/(1 + e^(hf*(sig - D)))`, suppressed for the top wasp by a LOCAL spatiality
+proxy `dom = (F/seenmax)^4`, where seenmax is each wasp's own fading memory of the
+top force it has faced (no global max). Both Fermi formulas are PAPER VERBATIM.
 
 ## Build
 
@@ -165,13 +169,12 @@ Flags: `--seed N` (default 0), `--ticks N` (4000), `--wasps N` / `--ants N`
 ## Emergence signature
 
 From 80 genetically IDENTICAL wasps, THREE castes self-separate: exactly 1
-Chief (high force ~9-10, HIGH threshold ~4), a small band of Foragers (~2-8,
+Chief (high force ~9-10, HIGH threshold ~4), a small band of Foragers (~2-6,
 force ~5, threshold ~0), and a Nurse majority (~70+, force ~1). Chief force is
 far above the population mean.
 Observed (SplitMix64 stream, matches the sibling ports, not Python's RNG):
-seed 0 -> Chief F=9.78 sigma=4.00, 4 Foragers F~4.88, 75 Nurses F~0.94
-(pop mean 1.25); seed 1 -> Chief F=9.59 sigma=4.00, 3 Foragers F~5.52,
-76 Nurses F~0.97.
+seed 0 -> Chief F=9.78 sigma=4.00, 5 Foragers F~5.15, 74 Nurses F~0.88;
+seed 1 -> Chief F=9.59 sigma=4.00, 4 Foragers F~5.75, 75 Nurses F~0.90.
 
 ---
 

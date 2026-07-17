@@ -12,15 +12,15 @@
  *
  * The four local rules (§3.2), operationalized from the paper:
  *   1. Wander randomly around the nest (dx,dy each in {-1,0,1}, toroidal).
- *   2. Keep a SHORT memory (~10 steps) of the object types recently seen
+ *   2. Keep a SHORT memory (~15 steps) of the object types recently seen
  *      (record every cell, including empties).                  [OPERATIONALIZED:
- *      "short memory ~10" is qualitative in the paper; we fix mem=10.]
+ *      "short memory ~10" is qualitative in the paper; we use mem=15 (Deneubourg 1991).]
  *   3. Not carrying + at an object: pick it up stochastically with
  *          p(pickup) = (k+ / (k+ + f))^2                        [PAPER §3.2 VERBATIM]
  *      where f is the fraction of memory holding the SAME type.
  *   4. Carrying + on empty ground: drop it stochastically with
  *          p(putdown) = (f / (k- + f))^2                        [PAPER §3.2 VERBATIM]
- *   Constants (paper): k+ ~ 1, k- ~ 3 (k- must exceed k+ or clusters dissolve
+ *   Constants (paper): k+ 0.1, k- 0.3 (Deneubourg 1991; Parunak's summary rounds to ~1, ~3) (k- must exceed k+ or clusters dissolve
  *   faster than they form).                                     [PAPER §3.2]
  * Local concentrations of like items emerge, retain members, and attract more;
  * stochastic pickup lets separate clusters merge. Sorting EMERGES; no ant
@@ -37,7 +37,7 @@
 #define H 24
 #define IDX(x, y) ((y) * W + (x))
 #define N_PER_TYPE 90     /* 90 each of A/B/C -> 270 items scattered */
-#define MEM 10            /* rule 2: short memory of the last 10 cells seen */
+#define MEM 15            /* rule 2: short memory (Deneubourg 1991: m=15; Parunak rounds to ~10) */
 
 /* --- SplitMix64 PRNG (identical across all ports, seeded from --seed).
  * A CROSS-PORT CONVENTION; intentionally NOT CPython's random module. All
@@ -141,14 +141,14 @@ static void step_ant(Ant *a) {
     if (a->carry == 0) {
         if (here != 0) {                                  /* rule 3: maybe pick up */
             double f = mem_frac(a, here);
-            double p = 1.0 / (1.0 + f);                    /* kp=1 -> kp/(kp+f) */
+            double p = 0.1 / (0.1 + f);                    /* kp=0.1 -> kp/(kp+f) */
             p = p * p;                                     /* PAPER §3.2 VERBATIM: (k+/(k++f))^2 */
             if (rng_float() < p) { a->carry = here; grid[IDX(a->x, a->y)] = 0; }
         }
     } else {
         if (here == 0) {                                  /* rule 4: maybe drop */
             double f = mem_frac(a, a->carry);
-            double p = f / (3.0 + f);                       /* km=3 -> f/(km+f) */
+            double p = f / (0.3 + f);                       /* km=0.3 -> f/(km+f) */
             p = p * p;                                      /* PAPER §3.2 VERBATIM: (f/(k-+f))^2 */
             if (rng_float() < p) { grid[IDX(a->x, a->y)] = a->carry; a->carry = 0; }
         }

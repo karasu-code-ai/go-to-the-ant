@@ -35,17 +35,17 @@ Run one port across many seeds and the swarm is genuinely noisy. Micro-configura
 
 | metric | min | max | mean | CV% |
 |---|---|---|---|---|
-| foraging — deliveries | 33 | 64 | 50.4 | 15.2 |
-| brood sort — clustering | 0.842 | 0.979 | 0.900 | 3.4 |
-| termites — column count | 3 | 8 | 5.4 | 22.6 |
-| termites — tallest column mass | 80,696 | 164,122 | 117,088 | 19.3 |
+| foraging — deliveries | 36 | 71 | 55.5 | 12.8 |
+| brood sort — clustering | 0.889 | 0.990 | 0.947 | 2.7 |
+| termites — column count | 3 | 5 | 3.9 | 17.9 |
+| termites — tallest column mass | 37,355 | 103,360 | 69,946 | 20.6 |
 | wasps — Chief force | 8.45 | 10.22 | 9.36 | 4.4 |
-| wasps — # foragers | 2 | 7 | 4.6 | 29.0 |
+| wasps — # foragers | 2 | 6 | 4.6 | 23.2 |
 | flocking — polarization | 0.874 | 0.937 | 0.913 | 1.7 |
 | wolves — escape gap° | 63 | 236 | 140.6 | 33.0 |
 | wolves — nearest wolf | 0.0 | 6.6 | 0.43 | 270 |
 
-The stochasticity is loud: the tallest termite column varies 2×, the wolf encirclement gap spans 63°–236°, the
+The stochasticity is loud: the tallest termite column varies nearly 3×, the wolf encirclement gap spans 63°–236°, the
 wasp forager band is anywhere from 2 to 7. (Wolves' nearest-wolf CV of 270% is a fat tail — the moose is *usually*
 pinned to ≈0.1–0.3, but in a few seeds the geometry lets it slip away entirely, hence the 6.6 max. Capture is the
 typical outcome, not a guaranteed one.)
@@ -63,14 +63,14 @@ the *same number* — at **every** seed, not just one:
 
 | seed | C | Rust | Go | JS | Java | CUDA | 5-seq identical? |
 |---|---|---|---|---|---|---|---|
-| 0 | 0.876 | 0.876 | 0.876 | 0.876 | 0.876 | 0.891 | **yes** |
-| 1 | 0.903 | 0.903 | 0.903 | 0.903 | 0.903 | 0.844 | **yes** |
-| 2 | 0.913 | 0.913 | 0.913 | 0.913 | 0.913 | 0.932 | **yes** |
-| 3 | 0.883 | 0.883 | 0.883 | 0.883 | 0.883 | 0.900 | **yes** |
-| 4 | 0.943 | 0.943 | 0.943 | 0.943 | 0.943 | 0.902 | **yes** |
-| 5 | 0.933 | 0.933 | 0.933 | 0.933 | 0.933 | 0.914 | **yes** |
-| 6 | 0.979 | 0.979 | 0.979 | 0.979 | 0.979 | 0.870 | **yes** |
-| 7 | 0.879 | 0.879 | 0.879 | 0.879 | 0.879 | 0.848 | **yes** |
+| 0 | 0.939 | 0.939 | 0.939 | 0.939 | 0.939 | 0.972 | **yes** |
+| 1 | 0.987 | 0.987 | 0.987 | 0.987 | 0.987 | 0.965 | **yes** |
+| 2 | 0.963 | 0.963 | 0.963 | 0.963 | 0.963 | 0.964 | **yes** |
+| 3 | 0.941 | 0.941 | 0.941 | 0.941 | 0.941 | 0.922 | **yes** |
+| 4 | 0.946 | 0.946 | 0.946 | 0.946 | 0.946 | 0.972 | **yes** |
+| 5 | 0.982 | 0.982 | 0.982 | 0.982 | 0.982 | 0.957 | **yes** |
+| 6 | 0.955 | 0.955 | 0.955 | 0.955 | 0.955 | 0.967 | **yes** |
+| 7 | 0.938 | 0.938 | 0.938 | 0.938 | 0.938 | 0.954 | **yes** |
 
 Foraging, brood-sort, termites, and wasps all behave this way. **This cleanliness is *not* convergence or
 "the optimization working."** It is the pinned PRNG: the same fixed pseudo-random tape fed to five ports that do
@@ -79,8 +79,8 @@ the same arithmetic has nothing to disagree on. Same tape in, same trajectory ou
 > Getting here caught a real bug. Java's `randrange` used signed `Math.floorMod`/`%`, which diverges from unsigned
 > `next() % n` whenever the PRNG's high bit is set (because `2^64 mod n ≠ 0`). It *looked* fine — the emergence
 > still appeared — but silently broke bit-identity for sort and termites. Only the cross-language cross-check
-> exposed it (sort/java `0.877` where its siblings said `0.876`). Fixed to `Long.remainderUnsigned`; the numbers
-> then snapped into line. **Determinism claims have to be verified empirically, not assumed from per-port tests.**
+> exposed it (sort/java diverged from its four siblings by a hair — enough to catch). Fixed to
+> `Long.remainderUnsigned`; the numbers then snapped into line. **Determinism claims have to be verified empirically, not assumed from per-port tests.**
 
 ---
 
@@ -121,7 +121,7 @@ The cleanliness a reader senses is really two unrelated phenomena:
 
 1. **Pinned-PRNG determinism** (Axis 2) — cross-language sameness *by construction*, for discrete systems.
 2. **Attractor convergence** (the genuine "optimization working") — the *macro* order-parameters self-average to the
-   same value regardless of seed: sort → ~0.90 (CV 3.4%), flocking → ~0.91 (CV 1.7%), exactly one Chief always
+   same value regardless of seed: sort → ~0.95 (CV 2.7%), flocking → ~0.91 (CV 1.7%), exactly one Chief always
    emerges, the moose is usually pinned. This is robust emergence, and it is what makes the swarms *useful*.
 
 Meanwhile the *micro*-configuration (Axis 1) stays noisy. **Macro converges; micro stays stochastic.** Neither of
@@ -149,7 +149,7 @@ Whether a multi-agent result is bit-reproducible is a property of **the system**
   or CPU acts like a new random seed; validate on the distribution of outcomes, not on a single trace.
 - **Parallelism (GPU)** reorders concurrent writes; reproduce the *distribution*, not the exact trajectory.
 
-For any "field-based" coordination — a pheromone grid, a shared blackboard, a consensus artifact many agents read
+For any "field-based" coordination — a pheromone grid, a shared blackboard, a scoreboard many agents read
 and reinforce — the practical rule is: if the field update is discrete and order-fixable, you can get exact
 reproducibility across the fleet; if it rides on chaotic continuous dynamics or a nondeterministic parallel
 reduction, pin what you can and test on distributions.

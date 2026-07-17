@@ -56,11 +56,13 @@ static const int DY[8] = {-1, -1, -1, 0, 0, 1, 1, 1};
 
 /* --- The world: raw shared arrays. --- */
 static double mass[W * H];   /* persistent structural mass (viz) */
-static double scent[W * H];  /* decaying pheromone (bias) */
+static double scent[W * H];  /* dissipative pheromone (bias): diffuses AND decays */
+static double scent2[W * H]; /* double-buffer for the diffusion pass */
 
 typedef struct { int x, y; double load; } Termite;
 
 static double g_metab = 0.4, g_maxload = 6.0;
+static double g_D = 0.010;    /* diffusion rate (Brownian spreading, §4.6) */
 
 /* mod that handles the small negative offsets from DX/DY (always > -W, > -H). */
 static inline int wrap(int v, int n) { return (v + n) % n; }
@@ -100,10 +102,23 @@ static void step_termite(Termite *t) {
     }
 }
 
-/* The field law: scent evaporates every tick (the entropy leak). */
-static void evaporate(double decay) {
+/* The field law (§4.6 entropy leak): scent DIFFUSES (Brownian spreading, a local
+ * nearest-neighbour stencil) then EVAPORATES (the forgetting half). Spreading turns
+ * point deposits into a graded field with breadth — the substrate for column skirts
+ * and inter-column arches. Double-buffered so every cell reads the OLD scent; draws
+ * NO rng, so cross-port bit-identity is preserved.
+ *   new = old + D*(mean8 - old);  then *= (1 - decay). */
+static void field_step(double decay, double D) {
     double keep = 1.0 - decay;
-    for (int i = 0; i < W * H; i++) scent[i] *= keep;
+    for (int y = 0; y < H; y++)
+        for (int x = 0; x < W; x++) {
+            double acc = 0.0;
+            for (int d = 0; d < 8; d++)
+                acc += scent[IDX(wrap(x + DX[d], W), wrap(y + DY[d], H))];
+            double c = scent[IDX(x, y)];
+            scent2[IDX(x, y)] = (c + D * (acc / 8.0 - c)) * keep;
+        }
+    memcpy(scent, scent2, sizeof scent);
 }
 
 /* columns() = count of toroidal local maxima with mass above 0.15*peak. */
@@ -177,7 +192,7 @@ int main(int argc, char **argv) {
     double peak;
     for (long t = 0; t < ticks; t++) {
         for (long k = 0; k < n; k++) step_termite(&tm[k]);
-        evaporate(decay);
+        field_step(decay, g_D);
         if (t % stepmod == 0 && nhist < 64) hist[nhist++] = columns(&peak);
     }
 

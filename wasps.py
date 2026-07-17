@@ -23,18 +23,20 @@ import argparse, math, random
 
 class Colony:
     SIGMAX = 4.0
-    # NOTE (principle application, honest tradeoff): the entropy-leak (leak/gen below) replaces an ad-hoc
-    # force CAP and bounds the hierarchy elegantly (§4.6) — it keeps the caste COUNTS (1 Chief + ~8 Foragers
-    # + ~71 Nurses) and the FORCE ordering. BUT dissipating the force shifts the force distribution, which
-    # couples into the demand/threshold balance, so the Chief's *high-threshold* detail (idle, doesn't forage)
-    # regresses vs the capped version. A real lesson: these two mechanisms (force-flow, threshold-response)
-    # are coupled, and can't be tuned independently. See PROVENANCE.md.
+    # NOTE (provenance, honest labelling): the genuine §4.6 entropy leak for wasps is RULE 1's conservative
+    # force TRANSFER among wasps (Parunak names "the flow of force among wasps that drives the emergence of the
+    # three roles"). The leak/gen term below is a SEPARATE Force-RELAXATION (mean-reversion to ~gen/leak) — it
+    # replaces an ad-hoc force CAP and bounds the hierarchy, but it is an INFERENCE BEYOND Parunak (plausibly a
+    # Theraulaz 1991 element we can't verify; the primary source isn't on hand), NOT the §4.6 entropy leak. It is
+    # empirically required: pure conservation condenses to one super-wasp with no graded forager band. See PROVENANCE.md.
     def __init__(self, n=80, seed=0, h=1.1, hf=3.0, quantum=0.10, appetite=None,
                  xi=0.02, phi=0.012, mob=1.6, leak=0.004, gen=0.005):
         self.rng = random.Random(seed); self.n = n
         # genetically identical: tiny initial spread only
         self.F = [1.0 + self.rng.uniform(-0.05, 0.05) for _ in range(n)]
         self.sig = [1.6 + self.rng.uniform(-0.05, 0.05) for _ in range(n)]
+        self.seenmax = list(self.F)   # each wasp's LOCAL, FADING memory of the top force it has faced
+        self.seendecay = 0.998        # the memory fades, so a stale early peak can't stick (robustness)
         self.D = 2.0
         self.h, self.hf, self.q = h, hf, quantum
         # appetite sized so the mobile minority (~n/8) can ALMOST meet demand — leaving the top wasp
@@ -50,25 +52,31 @@ class Colony:
             i, j = rng.randrange(n), rng.randrange(n)
             if i == j:
                 continue
-            pj = 1.0 / (1.0 + math.exp(self.h * (F[i] - F[j])))   # PAPER §3.4 VERBATIM: p=1/(1+e^(h(Fi-Fj)))
+            fi, fj = F[i], F[j]
+            pj = 1.0 / (1.0 + math.exp(self.h * (fi - fj)))      # PAPER §3.4 VERBATIM: p=1/(1+e^(h(Fi-Fj)))
             w, l = (j, i) if rng.random() < pj else (i, j)
             t = min(self.q, F[l])
             F[w] += t; F[l] -= t                         # force is conserved in the face-off (paper)
-        # ENTROPY LEAK (§4.6, PRINCIPLE APPLIED): force DISSIPATES and REGENERATES among the wasps — the
-        # paper names the force-flow itself an entropy leak. A steady leak+gen bounds the hierarchy naturally
+            m = fi if fi > fj else fj                    # LOCAL: each wasp's FADING memory of the strongest force it
+            di = self.seenmax[i] * self.seendecay        # has faced — a gossip estimate of the top force, NO global
+            dj = self.seenmax[j] * self.seendecay        # max. Fading lets the emergent Chief's own force become its
+            self.seenmax[i] = m if m > di else di        # remembered peak (dom->1), so its threshold reliably drifts
+            self.seenmax[j] = m if m > dj else dj        # high (0/32 seed failures vs 3/32 for the global-max version)
+        # FORCE RELAXATION (inference beyond Parunak — NOT the §4.6 entropy leak; that is Rule 1's force flow
+        # above): force mean-reverts toward ~gen/leak each tick. A steady leak+gen bounds the hierarchy naturally
         # (equilibrium mean ≈ gen/leak), so no ad-hoc force cap is needed to stop one super-wasp.
         for k in range(n):
             F[k] = max(0.0, F[k] * (1.0 - self.leak) + self.gen)
         # rules 2 & 3: brood stimulation + foraging. Work = COUNT of mobile foragers (each brings 1).
-        # SPATIALITY PROXY (operationalized): the paper's Chief "wanders and faces off", so it is NOT near
-        # the brood and is rarely stimulated -> its threshold drifts HIGH. We approximate "away dominating"
-        # by suppressing the top-force wasp's foraging: dominance=(F/Fmax)^4 hits only F≈Fmax (the Chief),
-        # leaving the foragers (F≈0.7·Fmax) almost untouched. This restores the Chief's high-σ caste.
+        # SPATIALITY PROXY (operationalized, now fully LOCAL): the paper's Chief "wanders and faces off", so it
+        # is NOT near the brood and is rarely stimulated -> its threshold drifts HIGH. We approximate "away
+        # dominating" by suppressing a wasp's foraging in proportion to how it ranks against the strongest force
+        # IT HAS FACED (self.seenmax, a per-agent gossip estimate — NO global max): dominance=(F/seenmax)^4 hits
+        # ~1 only for the wasp that out-forces everyone it meets (the Chief), leaving foragers almost untouched.
         W = 0
-        Fmax = max(F) or 1.0
         for k in range(n):
             pf = 1.0 / (1.0 + math.exp(self.hf * (sig[k] - self.D)))  # PAPER §3.4 VERBATIM: p=1/(1+e^(h(sig-D)))
-            dom = (F[k] / Fmax) ** 4                               # ~1 only for the single top wasp
+            dom = (F[k] / (self.seenmax[k] or 1.0)) ** 4          # ~1 only for the wasp on top of its own encounters
             if rng.random() < pf * (1.0 - dom):                   # stimulated AND not away dominating
                 sig[k] = max(0.0, sig[k] - self.xi)               # learns: threshold drops
                 if F[k] > self.mob:                               # mobile enough to actually hunt

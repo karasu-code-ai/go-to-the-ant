@@ -26,16 +26,15 @@
  *
  * PROVENANCE (carried from the Python reference):
  *   - The two Fermi formulas are PAPER VERBATIM (§3.4), tagged below.
- *   - The entropy-leak force bound (leak/gen, replacing an ad-hoc force cap) is
- *     OPERATIONALIZED (§4.6): a steady leak+gen bounds the hierarchy naturally
- *     (equilibrium mean ~ gen/leak). Honest tradeoff: dissipating force couples
- *     into the demand/threshold balance, so the Chief's high-threshold detail
- *     regresses vs a capped version.
- *   - dominance = (F/Fmax)^4 is OPERATIONALIZED as a spatiality proxy: the
+ *   - The genuine §4.6 entropy leak is Rule 1's conservative force TRANSFER. The
+ *     leak/gen force bound is a SEPARATE Force-RELAXATION (inference beyond Parunak,
+ *     plausibly a Theraulaz element we can't verify) that replaces an ad-hoc force
+ *     cap; empirically required (pure conservation condenses to one super-wasp).
+ *   - dominance = (F/seenmax)^4 is OPERATIONALIZED as a LOCAL spatiality proxy: the
  *     paper's Chief wanders and faces off (NOT near the brood), so it is rarely
- *     stimulated and its threshold drifts HIGH. (F/Fmax)^4 ~= 1 only for the
- *     single top wasp, leaving foragers (F ~ 0.7*Fmax) almost untouched, which
- *     restores the Chief's high-sigma caste.
+ *     stimulated and its threshold drifts HIGH. seenmax is each wasp's own estimate
+ *     of the top force (the strongest it has faced -- NO global max), so dom ~= 1
+ *     only for the wasp on top of its own encounters, restoring the Chief's high-sigma.
  *
  * Dependency-free: C standard library only.
  */
@@ -71,6 +70,7 @@ static inline double rng_uniform(double a, double b) {
 /* --- The colony state: raw arrays, the mechanism laid bare. --- */
 static double F[4096];    /* force (mobility) per wasp */
 static double sig[4096];  /* foraging threshold per wasp */
+static double seenmax[4096]; /* per-wasp LOCAL estimate of the top force (strongest it has faced) */
 
 /* comparator for qsort on doubles (ascending), used only for medians */
 static int cmp_double(const void *a, const void *b) {
@@ -97,12 +97,14 @@ int main(int argc, char **argv) {
     const double appetite = 0.075 * (double)n;
     const double xi = 0.02, phi = 0.012, mob = 1.6;
     const double leak = 0.004, gen = 0.005;
+    const double seendecay = 0.998;   /* the seenmax memory fades (robustness) */
     double D = 2.0;
 
     /* genetically identical: tiny initial spread only.
      * RNG order matches Python exactly: all n F-inits, then all n sig-inits. */
     for (long k = 0; k < n; k++) F[k] = 1.0 + rng_uniform(-0.05, 0.05);
     for (long k = 0; k < n; k++) sig[k] = 1.6 + rng_uniform(-0.05, 0.05);
+    for (long k = 0; k < n; k++) seenmax[k] = F[k];
 
     /* Forager/Nurse split history, sampled like the Python (every ticks//12). */
     long sample = ticks / 12; if (sample < 1) sample = 1;
@@ -115,29 +117,32 @@ int main(int argc, char **argv) {
             long j = (long)rng_randrange((uint64_t)n);
             if (i == j) continue;
             /* PAPER §3.4 VERBATIM: p = 1/(1 + e^(h*(F_i - F_j))) */
-            double pj = 1.0 / (1.0 + exp(h * (F[i] - F[j])));
+            double fi = F[i], fj = F[j];
+            double pj = 1.0 / (1.0 + exp(h * (fi - fj)));
             long w, l;
             if (rng_float() < pj) { w = j; l = i; } else { w = i; l = j; }
             double q = quantum < F[l] ? quantum : F[l];
             F[w] += q; F[l] -= q;                 /* force conserved in the face-off (paper) */
+            double m = fi > fj ? fi : fj;         /* LOCAL: each wasp's FADING memory of the strongest force faced */
+            double di = seenmax[i] * seendecay, dj = seenmax[j] * seendecay;
+            seenmax[i] = m > di ? m : di;
+            seenmax[j] = m > dj ? m : dj;
         }
-        /* ENTROPY LEAK (§4.6, OPERATIONALIZED): force dissipates and regenerates.
-         * A steady leak+gen bounds the hierarchy naturally (mean ~ gen/leak), so
-         * no ad-hoc force cap is needed to stop one super-wasp. */
+        /* FORCE RELAXATION (inference beyond Parunak, NOT the §4.6 entropy leak -- that
+         * is Rule 1's conservative force flow above): force mean-reverts toward ~gen/leak.
+         * A steady leak+gen bounds the hierarchy naturally, so no ad-hoc force cap is needed. */
         for (long k = 0; k < n; k++) {
             double v = F[k] * (1.0 - leak) + gen;
             F[k] = v > 0.0 ? v : 0.0;
         }
         /* rules 2 & 3: brood stimulation + foraging. Work = COUNT of mobile foragers. */
-        double Fmax = F[0];
-        for (long k = 1; k < n; k++) if (F[k] > Fmax) Fmax = F[k];
-        if (Fmax <= 0.0) Fmax = 1.0;
         long W = 0;
         for (long k = 0; k < n; k++) {
             /* PAPER §3.4 VERBATIM: p = 1/(1 + e^(hf*(sig - D))) */
             double pf = 1.0 / (1.0 + exp(hf * (sig[k] - D)));
-            double ratio = F[k] / Fmax;
-            /* SPATIALITY PROXY (OPERATIONALIZED): dom ~= 1 only for the single top wasp */
+            double sm = seenmax[k] > 0.0 ? seenmax[k] : 1.0;
+            double ratio = F[k] / sm;
+            /* SPATIALITY PROXY (OPERATIONALIZED, LOCAL): dom ~= 1 only for the wasp on top of its own encounters */
             double dom = ratio * ratio * ratio * ratio;
             if (rng_float() < pf * (1.0 - dom)) {  /* stimulated AND not away dominating */
                 double s = sig[k] - xi;            /* learns: threshold drops */

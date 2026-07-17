@@ -58,6 +58,7 @@ static double food_pher[W * H];   /* laid by carriers; followed by searchers */
 static double home_pher[W * H];   /* emitted+diffused by nest; followed by carriers */
 static int    obstacle[W * H];
 static double home_tmp[W * H];    /* Jacobi scratch for simultaneous diffusion */
+static double food_tmp[W * H];    /* Jacobi scratch for the food-trail diffusion */
 
 static const int NEST_X = 5,  NEST_Y = H / 2;   /* (5, 14) */
 static const int FOOD_X = W - 6, FOOD_Y = H / 2; /* (50, 14) */
@@ -133,6 +134,27 @@ static void step_ant(Ant *a, double deposit) {
     }
 }
 
+/* Step 2.5: the food trail SPREADS a little (Brownian breadth, §3.1/§4.6): nearby
+ * sub-trails "merge together into a trace." Local stencil over FREE neighbours only
+ * (obstacle-aware, non-toroidal); draws no rng. Jacobi (food_tmp scratch).
+ * new = old + D*(mean_free_nbrs - old). */
+static void diffuse_food(double D) {
+    if (D <= 0.0) return;
+    for (int y = 0; y < H; y++)
+        for (int x = 0; x < W; x++) {
+            int i = IDX(x, y);
+            if (!is_free(x, y)) { food_tmp[i] = food_pher[i]; continue; }
+            double s = 0.0; int c = 0;
+            for (int d = 0; d < 8; d++) {
+                int xx = x + DX[d], yy = y + DY[d];
+                if (is_free(xx, yy)) { s += food_pher[IDX(xx, yy)]; c++; }
+            }
+            double cur = food_pher[i];
+            food_tmp[i] = c ? cur + D * (s / c - cur) : cur;
+        }
+    memcpy(food_pher, food_tmp, sizeof food_pher);
+}
+
 /* Step 3: both fields dissipate every tick (the entropy leak). */
 static void evaporate(double rate) {
     double keep = 1.0 - rate;
@@ -171,13 +193,14 @@ static void render_ascii(const Ant *ants, int n) {
 
 int main(int argc, char **argv) {
     long ticks = 3000, n_ants = 90;
-    double evap = 0.015, deposit = 1.0;
+    double evap = 0.015, deposit = 1.0, diffuse = 0.03;
     uint64_t seed = 0;
     for (int i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "--seed") && i + 1 < argc) seed = strtoull(argv[++i], NULL, 10);
         else if (!strcmp(argv[i], "--ticks") && i + 1 < argc) ticks = strtol(argv[++i], NULL, 10);
         else if (!strcmp(argv[i], "--ants") && i + 1 < argc) n_ants = strtol(argv[++i], NULL, 10);
         else if (!strcmp(argv[i], "--evap") && i + 1 < argc) evap = strtod(argv[++i], NULL);
+        else if (!strcmp(argv[i], "--diffuse") && i + 1 < argc) diffuse = strtod(argv[++i], NULL);
     }
     rng_state = seed;
 
@@ -194,6 +217,7 @@ int main(int argc, char **argv) {
     for (long t = 0; t < ticks; t++) {
         emit_and_diffuse_home();                 /* nest broadcasts the home gradient */
         for (long k = 0; k < n_ants; k++) step_ant(&ants[k], deposit);
+        diffuse_food(diffuse);                   /* the food trail spreads a little (breadth) */
         evaporate(evap);                         /* both fields dissipate */
         if (t % step == 0 && nhist < 64) hist[nhist++] = deliveries;
     }
