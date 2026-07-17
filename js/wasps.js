@@ -56,14 +56,12 @@ class SplitMix64 {
 }
 
 class Colony {
-  // NOTE (principle application, honest tradeoff): the entropy-leak (leak/gen
-  // below) replaces an ad-hoc force CAP and bounds the hierarchy elegantly
-  // (§4.6) — it keeps the caste COUNTS (1 Chief + a few Foragers + a Nurse
-  // majority) and the FORCE ordering. BUT dissipating the force shifts the force
-  // distribution, which couples into the demand/threshold balance, so the
-  // Chief's *high-threshold* detail regresses vs the capped version. A real
-  // lesson: force-flow and threshold-response are coupled and can't be tuned
-  // independently.
+  // NOTE (provenance, honest labelling): the genuine §4.6 entropy leak for wasps is
+  // RULE 1's conservative force TRANSFER (Parunak names "the flow of force among wasps").
+  // The leak/gen term below is a SEPARATE Force-RELAXATION (mean-reversion to ~gen/leak)
+  // — an INFERENCE BEYOND Parunak (plausibly a Theraulaz 1991 element we can't verify),
+  // replacing an ad-hoc force CAP. Empirically required: pure conservation condenses to
+  // one super-wasp with no graded forager band. The dominance term is now LOCAL (seenmax).
   constructor(n = 80, seed = 0, h = 1.1, hf = 3.0, quantum = 0.10, appetite = null,
               xi = 0.02, phi = 0.012, mob = 1.6, leak = 0.004, gen = 0.005) {
     this.SIGMAX = 4.0;
@@ -76,6 +74,8 @@ class Colony {
     for (let i = 0; i < n; i++) this.F[i] = 1.0 + this.rng.uniform(-0.05, 0.05);
     this.sig = new Array(n);
     for (let i = 0; i < n; i++) this.sig[i] = 1.6 + this.rng.uniform(-0.05, 0.05);
+    this.seenmax = this.F.slice();   // per-wasp FADING memory of the top force it has faced (LOCAL)
+    this.seendecay = 0.998;          // the memory fades (robustness)
     this.D = 2.0;
     this.h = h; this.hf = hf; this.q = quantum;
     // appetite sized so the mobile minority (~n/8) can ALMOST meet demand —
@@ -93,33 +93,37 @@ class Colony {
       const i = rng.randrange(n), j = rng.randrange(n);
       if (i === j) continue;
       // PAPER §3.4 VERBATIM: p = 1/(1 + e^(h*(Fi - Fj)))
-      const pj = 1.0 / (1.0 + Math.exp(this.h * (F[i] - F[j])));
+      const fi = F[i], fj = F[j];
+      const pj = 1.0 / (1.0 + Math.exp(this.h * (fi - fj)));
       let w, l;
       if (rng.random() < pj) { w = j; l = i; } else { w = i; l = j; }
       const t = Math.min(this.q, F[l]);
       F[w] += t; F[l] -= t;                    // force is conserved in the face-off (paper)
+      const m = fi > fj ? fi : fj;             // LOCAL: each wasp's FADING memory of the strongest force faced
+      const di = this.seenmax[i] * this.seendecay, dj = this.seenmax[j] * this.seendecay;
+      this.seenmax[i] = m > di ? m : di;
+      this.seenmax[j] = m > dj ? m : dj;
     }
-    // ENTROPY LEAK (§4.6, PRINCIPLE APPLIED): force DISSIPATES and REGENERATES
-    // among the wasps — the paper names the force-flow itself an entropy leak. A
-    // steady leak+gen bounds the hierarchy naturally (equilibrium mean ~ gen/leak),
-    // so no ad-hoc force cap is needed to stop one super-wasp.
+    // FORCE RELAXATION (inference beyond Parunak, NOT the §4.6 entropy leak — that is
+    // Rule 1's conservative force flow above): force mean-reverts toward ~gen/leak each
+    // tick. A steady leak+gen bounds the hierarchy naturally, so no ad-hoc force cap is
+    // needed. Empirically required (pure conservation condenses to one super-wasp).
     for (let k = 0; k < n; k++) {
       F[k] = Math.max(0.0, F[k] * (1.0 - this.leak) + this.gen);
     }
     // rules 2 & 3: brood stimulation + foraging. Work = COUNT of mobile foragers.
-    // SPATIALITY PROXY (OPERATIONALIZED): the paper's Chief "wanders and faces
-    // off", so it is NOT near the brood and is rarely stimulated -> its threshold
-    // drifts HIGH. We approximate "away dominating" by suppressing the top-force
-    // wasp's foraging: dominance = (F/Fmax)^4 hits only F~Fmax (the Chief),
-    // leaving the foragers (F~0.7*Fmax) almost untouched. Restores the Chief's high-sig caste.
+    // SPATIALITY PROXY (OPERATIONALIZED, now LOCAL): the paper's Chief "wanders and
+    // faces off", so it is NOT near the brood and is rarely stimulated -> its threshold
+    // drifts HIGH. We approximate "away dominating" via dominance = (F/seenmax)^4, where
+    // seenmax is each wasp's OWN fading memory of the top force it has faced (NO global
+    // max) -> ~1 only for the wasp atop its own encounters (the Chief). Restores its high-sig.
     let W = 0;
-    let Fmax = 0.0;
-    for (let k = 0; k < n; k++) if (F[k] > Fmax) Fmax = F[k];
-    if (Fmax === 0.0) Fmax = 1.0;
     for (let k = 0; k < n; k++) {
       // PAPER §3.4 VERBATIM: p = 1/(1 + e^(hf*(sig - D)))
       const pf = 1.0 / (1.0 + Math.exp(this.hf * (sig[k] - this.D)));
-      const dom = (F[k] / Fmax) ** 4;                   // ~1 only for the single top wasp
+      const sm = this.seenmax[k] > 0.0 ? this.seenmax[k] : 1.0;
+      const ratio = F[k] / sm;
+      const dom = ratio * ratio * ratio * ratio;        // (F/seenmax)^4 ~1 only for the wasp atop its own encounters
       if (rng.random() < pf * (1.0 - dom)) {            // stimulated AND not away dominating
         sig[k] = Math.max(0.0, sig[k] - this.xi);       // learns: threshold drops
         if (F[k] > this.mob) W += 1;                    // mobile enough to actually hunt

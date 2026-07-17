@@ -53,20 +53,37 @@ class SplitMix64 {
 }
 
 class Mound {
-  constructor(w = 58, h = 34, seed = 0, decay = 0.02) {
+  constructor(w = 58, h = 34, seed = 0, decay = 0.02, D = 0.010) {
     this.w = w; this.h = h;
     this.rng = new SplitMix64(seed);
     this.mass = Array.from({ length: h }, () => new Float64Array(w));  // persistent structure (viz)
-    this.scent = Array.from({ length: h }, () => new Float64Array(w)); // decaying pheromone (bias)
+    this.scent = Array.from({ length: h }, () => new Float64Array(w)); // dissipative pheromone: diffuses AND decays
+    this.buf = Array.from({ length: h }, () => new Float64Array(w));   // double-buffer for the diffusion pass
     this.decay = decay;
+    this.D = D;                                                        // diffusion rate (Brownian spreading, §4.6)
   }
 
-  evaporate() {
-    const keep = 1 - this.decay;
-    for (let y = 0; y < this.h; y++) {
-      const row = this.scent[y];
-      for (let x = 0; x < this.w; x++) row[x] *= keep;
+  // Field law (§4.6 entropy leak): scent DIFFUSES (Brownian spreading, a local nearest-
+  // neighbour stencil) then EVAPORATES. Spreading gives each pile breadth — the substrate
+  // for column skirts and inter-column arches. Double-buffered so every cell reads the OLD
+  // scent; draws NO rng, so cross-port bit-identity is preserved.
+  //   new = old + D*(mean8 - old);  then *= (1 - decay).
+  fieldStep() {
+    const keep = 1 - this.decay, D = this.D, w = this.w, h = this.h;
+    for (let y = 0; y < h; y++) {
+      const brow = this.buf[y];
+      for (let x = 0; x < w; x++) {
+        let acc = 0.0;
+        for (const [dx, dy] of DIRS) {
+          const nx = ((x + dx) % w + w) % w;
+          const ny = ((y + dy) % h + h) % h;
+          acc += this.scent[ny][nx];
+        }
+        const c = this.scent[y][x];
+        brow[x] = (c + D * (acc / 8.0 - c)) * keep;
+      }
     }
+    const t = this.scent; this.scent = this.buf; this.buf = t;
   }
 
   // Count distinct COLUMNS = toroidal local maxima with mass above a fraction of
@@ -147,7 +164,7 @@ function run(ticks, n, seed, decay, verbose) {
   const stride = Math.max(1, Math.floor(ticks / 12));
   for (let t = 0; t < ticks; t++) {
     for (const tm of termites) tm.step();
-    mound.evaporate();
+    mound.fieldStep();
     if (t % stride === 0) hist.push(mound.columns()[0]);
   }
   if (verbose) {

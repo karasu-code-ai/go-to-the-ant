@@ -1,0 +1,153 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Go to the Ant — the double bridge (path optimization)</title>
+<style>
+  :root{ --bg:#14110c; --soil:#0e0c08; --fg:#f4ecdb; --dim:#a99b82; --accent:#e8a33d;
+         --line:#2e2618; --card:#1a1610; --short:#ffcf5a; --long:#8a6b3a; --nest:#5ec8ff; --food:#8fe07a; }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);
+    font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,sans-serif;line-height:1.5;padding:28px 20px 60px}
+  .wrap{max-width:900px;margin:0 auto}
+  h1{font-family:Georgia,serif;font-weight:600;font-size:clamp(26px,5vw,40px);margin:0 0 4px}
+  h1 em{font-style:italic;color:var(--dim);font-size:.62em;font-weight:500}
+  .sub{color:var(--dim);margin:0 0 20px;max-width:70ch}
+  .sub b{color:var(--fg);font-weight:600}
+  .stage{background:var(--soil);border:1px solid var(--line);border-radius:14px;overflow:hidden}
+  canvas{display:block;width:100%;height:auto}
+  .panel{display:flex;flex-wrap:wrap;gap:22px;align-items:center;margin-top:16px}
+  .big{font-size:40px;font-weight:700;color:var(--short);font-variant-numeric:tabular-nums;line-height:1}
+  .biglbl{font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--dim)}
+  .conv{flex:1;min-width:220px}
+  .bar{height:26px;border-radius:6px;background:#0003;border:1px solid var(--line);overflow:hidden;display:flex}
+  .bar i{display:block;height:100%;background:linear-gradient(90deg,var(--long),var(--short))}
+  .phrow{display:flex;gap:14px;font-size:13px;color:var(--dim);margin-top:8px;flex-wrap:wrap}
+  .sw{display:inline-block;width:12px;height:12px;border-radius:3px;vertical-align:-1px;margin-right:5px}
+  .ctl{display:flex;gap:16px;align-items:center;margin-top:18px;flex-wrap:wrap}
+  .ctl label{font-size:13px;color:var(--dim)}
+  .ctl b{color:var(--fg);font-variant-numeric:tabular-nums}
+  input[type=range]{accent-color:var(--accent);vertical-align:middle}
+  button{font-family:inherit;font-weight:600;font-size:13px;padding:8px 16px;border-radius:8px;cursor:pointer;
+    background:var(--accent);color:#1a1206;border:none}
+  button:hover{filter:brightness(1.08)}
+  .note{font-size:12.5px;color:var(--dim);margin-top:16px;max-width:74ch}
+  .note code{color:var(--accent);font-family:ui-monospace,Menlo,monospace}
+</style>
+<div class="wrap">
+  <h1>The double bridge <em>path optimization, emergent</em></h1>
+  <p class="sub">Goss et al. 1989. The nest and the food are joined by <b>two branches of different length</b>.
+    No ant measures anything — yet the colony <b>converges on the shorter path over time</b>. Ants that take the
+    short branch return sooner, so they re-lay pheromone sooner; the nonlinear choice
+    <code>p ∝ (c+φ)²</code> amplifies that lead. This is the optimization the open-plane forager can't show —
+    because there, there is no shorter route to <em>choose</em>.</p>
+
+  <div class="stage"><canvas id="cv" width="880" height="440"></canvas></div>
+
+  <div class="panel">
+    <div><div class="big" id="pct">50%</div><div class="biglbl">colony on the short path</div></div>
+    <div class="conv">
+      <div class="bar"><i id="barfill" style="width:50%"></i></div>
+      <div class="phrow">
+        <span><span class="sw" style="background:var(--short)"></span>short branch · φ <b id="phS">0</b></span>
+        <span><span class="sw" style="background:var(--long)"></span>long branch · φ <b id="phL">0</b></span>
+        <span><span class="sw" style="background:var(--food)"></span>food</span>
+        <span><span class="sw" style="background:var(--nest)"></span>nest</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="ctl">
+    <label>Long : short length <b id="vRatio">2.0</b>×
+      <input id="ratio" type="range" min="1" max="3" step="0.5" value="2"></label>
+    <label>Ants <b id="vAnts">56</b>
+      <input id="ants" type="range" min="8" max="80" step="4" value="56"></label>
+    <button id="reset">restart</button>
+  </div>
+
+  <p class="note">Watch the short branch brighten and the ants shift onto it. Set the ratio to
+    <b>1×</b> (equal branches) and neither wins — there's nothing to optimize. Slide the ant count
+    <b>down</b> and the colony sometimes locks onto the <em>long</em> branch instead: the shortcut is a
+    statistical result, not a guarantee — exactly the stochastic outcome Goss reported, and more reliable the
+    larger the colony. The reference <code>double_bridge.py</code> prints the same convergence.</p>
+</div>
+<script>
+const cv = document.getElementById('cv'), ctx = cv.getContext('2d');
+const NEST = [130, 220], FOOD = [750, 220];
+// quadratic-bezier control points: short = shallow bow up, long = deep bow down (visibly longer)
+const CTRL = { S: [440, 110], L: [440, 430] };
+function bez(b, t){ const p0=NEST, p1=CTRL[b], p2=FOOD, u=1-t;
+  return [u*u*p0[0]+2*u*t*p1[0]+t*t*p2[0], u*u*p0[1]+2*u*t*p1[1]+t*t*p2[1]]; }
+
+class DoubleBridge {
+  constructor(nAnts, ratio){
+    this.Ls = 20; this.Ll = Math.round(20*ratio);
+    this.c = 20; this.n = 2; this.q = 1.0; this.evap = 0.005;
+    this.phi = { S:0, L:0 };
+    this.ants = [];
+    for(let i=0;i<nAnts;i++){
+      const branch = Math.random()<0.5?'S':'L';
+      const len = branch==='S'?this.Ls:this.Ll;
+      this.ants.push({ branch, prog: (Math.random()*len)|0, dir: Math.random()<0.5?1:-1 });
+    }
+    this.recent = [];
+  }
+  choose(){ const s=Math.pow(this.c+this.phi.S,this.n), l=Math.pow(this.c+this.phi.L,this.n);
+    return Math.random() < s/(s+l) ? 'S':'L'; }
+  step(){
+    for(const a of this.ants){
+      if(a.branch===null){ a.branch=this.choose(); a.prog=0; a.dir*=-1;
+        this.recent.push(a.branch==='S'?1:0); if(this.recent.length>300) this.recent.shift(); }
+      a.prog++;
+      const len = a.branch==='S'?this.Ls:this.Ll;
+      if(a.prog>=len){ this.phi[a.branch]+=this.q; a.branch=null; }
+    }
+    if(this.evap>0){ this.phi.S*=(1-this.evap); this.phi.L*=(1-this.evap); }
+  }
+  fracShort(){ return this.recent.length? this.recent.reduce((x,y)=>x+y,0)/this.recent.length : 0.5; }
+}
+
+let sim, ratio=2, nAnts=56;
+function build(){ sim = new DoubleBridge(nAnts, ratio); }
+build();
+
+function drawArc(b, phi, peak){
+  const t = Math.max(0.06, Math.min(1, phi/(peak||1)));   // pheromone -> intensity
+  ctx.lineWidth = 2 + t*10;
+  ctx.strokeStyle = b==='S'
+    ? `rgba(255,207,90,${0.18+0.82*t})`
+    : `rgba(180,140,70,${0.16+0.72*t})`;
+  ctx.beginPath(); ctx.moveTo(NEST[0],NEST[1]);
+  ctx.quadraticCurveTo(CTRL[b][0],CTRL[b][1],FOOD[0],FOOD[1]); ctx.stroke();
+}
+function dot(p,r,col){ ctx.beginPath(); ctx.arc(p[0],p[1],r,0,7); ctx.fillStyle=col; ctx.fill(); }
+
+function render(){
+  ctx.clearRect(0,0,cv.width,cv.height);
+  const peak = Math.max(sim.phi.S, sim.phi.L, 1);
+  drawArc('L', sim.phi.L, peak); drawArc('S', sim.phi.S, peak);
+  for(const a of sim.ants){
+    if(a.branch===null) continue;
+    const len = a.branch==='S'?sim.Ls:sim.Ll;
+    const f = a.prog/len, t = a.dir>0? f : 1-f;   // dir gives the shuttle direction along the arc
+    dot(bez(a.branch,t), 2.4, a.branch==='S'?'#fff3d6':'#f4ecdb');
+  }
+  dot(NEST,10,'#5ec8ff'); dot(FOOD,10,'#8fe07a');
+  ctx.fillStyle='#0e0c08'; ctx.font='bold 11px ui-sans-serif'; ctx.textAlign='center';
+  ctx.fillText('N',NEST[0],NEST[1]+4); ctx.fillText('F',FOOD[0],FOOD[1]+4);
+}
+
+const $=id=>document.getElementById(id);
+function tick(){
+  for(let k=0;k<2;k++) sim.step();       // a couple of sim steps per frame
+  render();
+  const fs = sim.fracShort();
+  $('pct').textContent = Math.round(fs*100)+'%';
+  $('barfill').style.width = (fs*100)+'%';
+  $('phS').textContent = sim.phi.S.toFixed(0);
+  $('phL').textContent = sim.phi.L.toFixed(0);
+  requestAnimationFrame(tick);
+}
+$('ratio').oninput = e=>{ ratio=+e.target.value; $('vRatio').textContent=ratio.toFixed(1); build(); };
+$('ants').oninput = e=>{ nAnts=+e.target.value; $('vAnts').textContent=nAnts; build(); };
+$('reset').onclick = build;
+tick();
+</script>

@@ -26,8 +26,8 @@ No build step. Requires Node.js (tested on v20).
 ## Brood sorting (§3.2)
 
 A second port in this dir: Deneubourg's ant brood sorting (`sort.js`). 40x24
-grid, 90 items each of types A/B/C, 40 ants, short memory (~10), pickup
-`(k+/(k++f))^2` with k+=1, putdown `(f/(k-+f))^2` with k-=3, 120000 ticks.
+grid, 90 items each of types A/B/C, 40 ants, short memory (~15), pickup
+`(k+/(k++f))^2` with k+=0.1, putdown `(f/(k-+f))^2` with k-=0.3, 120000 ticks.
 
 ```sh
 node sort.js                   # defaults: 120000 ticks, 40 ants, seed 0
@@ -55,7 +55,8 @@ obstacle `|`, pheromone shaded ` .:-=+*#%@`).
 ## Emergence signature
 
 Deliveries stay 0 for the first few hundred ticks while the trail forms, then
-rise on an S-curve to tens of deliveries by tick 3000 (seed 0 ≈ 46, seed 1 ≈ 60),
+rise on an S-curve to tens of deliveries by tick 3000 (seed 0 ≈ 50, seed 1 ≈ 64;
+the trail also diffuses a little — breadth, §3.1/§4.6 — so nearby sub-trails merge),
 with a visible pheromone trail connecting nest and food.
 
 ---
@@ -90,7 +91,7 @@ count, the tallest column mass, and a 13-point `columns(t)` trace.
 
 Scattered dabs self-concentrate into a HANDFUL of distinct columns (~5–10), one
 very tall (tallest mass in the tens of thousands). Seed 0: 5 columns, tallest
-≈ 96053; seed 1: 4 columns, tallest ≈ 133850. These numbers are bit-identical
+≈ 103360; seed 1: 4 columns, tallest ≈ 56810. These numbers are bit-identical
 to the other sequential ports (Go/Java/Rust/C) via the shared SplitMix64
 convention; they intentionally differ from the CPython reference, which uses a
 different base PRNG.
@@ -145,9 +146,10 @@ wasps, 4000 ticks. Three interacting rules — face-offs that pass a quantum of
 Force (Fermi win probability `1/(1+e^(h(Fi-Fj)))`, VERBATIM), brood demand
 `D+=appetite-W`, and foraging that lowers/raises a threshold (Fermi
 `1/(1+e^(hf(sig-D)))`, VERBATIM). Two mechanisms are OPERATIONALIZED and tagged
-in-source: the entropy-leak force bound (`leak`/`gen` replacing an ad-hoc cap)
-and `dominance=(F/Fmax)^4` as a spatiality proxy that restores the Chief's high
-threshold.
+in-source: the force-relaxation bound (`leak`/`gen` replacing an ad-hoc cap — an
+inference beyond Parunak, NOT the §4.6 entropy leak, which is Rule 1's force flow)
+and the LOCAL `dominance=(F/seenmax)^4` spatiality proxy — each wasp's own fading
+memory of the top force it has faced (no global max) — that restores the Chief's high threshold.
 
 ## Run
 
@@ -172,10 +174,10 @@ ASCII landscape (`C` chief, `F` forager, `n` nurse; x = Force, y = Threshold).
 ## Emergence signature
 
 From genetically-identical wasps, THREE castes emerge: exactly 1 Chief (high
-force, HIGH threshold ~4), a small band of Foragers (~2–8, force ~5, threshold
+force, HIGH threshold ~4), a small band of Foragers (~2–6, force ~5, threshold
 ~0), and a Nurse majority (~70+, force ~1). Chief force >> population mean. Seed
-0: Chief F=9.78 σ=4.00, 4 Foragers F≈4.88, 75 Nurses F≈0.94 (pop mean 1.25); seed
-1: Chief F=9.59, 3 Foragers, 76 Nurses. These numbers are bit-identical to the
+0: Chief F=9.78 σ=4.00, 5 Foragers F≈5.15, 74 Nurses F≈0.88; seed
+1: Chief F=9.59, 4 Foragers, 75 Nurses. These numbers are bit-identical to the
 other sequential ports (Go/Java/Rust/C) via the shared SplitMix64 convention;
 they intentionally differ from the CPython reference, which uses a different base
 PRNG (the STRUCTURE — the three-caste split — is what is preserved).

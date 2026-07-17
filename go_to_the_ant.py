@@ -2,7 +2,7 @@
 r"""'Go to the Ant' — a faithful recreation of Parunak's OG foraging swarm.
 
 Source: H. Van Dyke Parunak, "'Go to the Ant': Engineering Principles from Natural Multi-Agent Systems,"
-Annals of Operations Research 75:69-101 (1997). 
+Annals of Operations Research 75:69-101 (1997).
 
 Recreated from the paper + references ALONE — the five local ant rules (§3.1 "Ants: Path planning"),
 verbatim in spirit:
@@ -14,9 +14,11 @@ verbatim in spirit:
      "both approaches yield the same global behavior. The homing beacon generates paths sooner.")
   4. If at food and not holding any, pick it up.
   5. If at the nest and carrying food, drop it.
-Plus the field law: pheromone EVAPORATES every tick, so paths to depleted sources — and paths laid by ants
-who never got home — fade. No ant plans a route; the network (a minimum spanning tree, Goss et al. 1989)
-EMERGES from deposit + evaporation + weighted-random following.
+Plus the field law: the food trail both DIFFUSES a little (Brownian spreading, §4.6) and EVAPORATES every
+tick. Spreading gives the trail SOME BREADTH so nearby sub-trails "merge together into a trace" (Parunak §3.1);
+evaporation fades paths to depleted sources — and paths laid by ants who never got home. No ant plans a route;
+the network (a minimum spanning tree, Goss et al. 1989) EMERGES from deposit + diffusion + evaporation +
+weighted-random following.
 
 The paper's design principles this honors: agents small (a few local rules, short reach); decentralized;
 share information THROUGH THE ENVIRONMENT (the pheromone field is the only channel); support entropy (the
@@ -60,6 +62,28 @@ class World:
 
     def at_nest(self, x, y):
         return abs(x - self.nest[0]) <= self.region and abs(y - self.nest[1]) <= self.region
+
+    def diffuse_food(self, D):
+        """§3.1/§4.6: the food trail SPREADS a little (Brownian), so 'because pheromone paths have some breadth,
+        they tend to merge together into a trace that becomes straighter the more it is used' (Parunak §3.1). A
+        local nearest-neighbour stencil over FREE cells only (obstacle-aware, non-toroidal); draws NO rng, so
+        cross-port bit-identity is preserved. new = old + D*(mean_free_nbrs - old)."""
+        if D <= 0.0:
+            return
+        nxt = [row[:] for row in self.food_pher]
+        for y in range(self.h):
+            for x in range(self.w):
+                if not self.free(x, y):
+                    continue
+                s = 0.0; c = 0
+                for dx, dy in DIRS:
+                    xx, yy = x + dx, y + dy
+                    if self.free(xx, yy):
+                        s += self.food_pher[yy][xx]; c += 1
+                if c:
+                    cur = self.food_pher[y][x]
+                    nxt[y][x] = cur + D * (s / c - cur)
+        self.food_pher = nxt
 
     def evaporate(self, rate):
         keep = 1.0 - rate
@@ -135,7 +159,7 @@ class Ant:
             self.carrying = False; self.w.deliveries += 1
 
 
-def run(ticks=3000, n_ants=90, evap=0.015, deposit=1.0, seed=0, use_wall=False, verbose=True):
+def run(ticks=3000, n_ants=90, evap=0.015, deposit=1.0, seed=0, use_wall=False, diffuse=0.03, verbose=True):
     world = World(seed=seed, use_wall=use_wall)
     ants = [Ant(world) for _ in range(n_ants)]
     history = []
@@ -143,6 +167,7 @@ def run(ticks=3000, n_ants=90, evap=0.015, deposit=1.0, seed=0, use_wall=False, 
         world.emit_and_diffuse_home()                       # nest broadcasts the home gradient
         for a in ants:
             a.step(deposit)
+        world.diffuse_food(diffuse)                         # the food trail spreads a little (breadth)
         world.evaporate(evap)
         if t % max(1, ticks // 20) == 0:
             history.append((t, world.deliveries))
@@ -177,11 +202,12 @@ def main():
     ap.add_argument("--ticks", type=int, default=3000)
     ap.add_argument("--ants", type=int, default=90)
     ap.add_argument("--evap", type=float, default=0.015)
+    ap.add_argument("--diffuse", type=float, default=0.03, help="food-trail diffusion (breadth); 0 = off")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--wall", action="store_true", help="add a wall with a gap (the routing demo)")
     ap.add_argument("--png", default=None)
     a = ap.parse_args()
-    world, hist = run(a.ticks, a.ants, a.evap, seed=a.seed, use_wall=a.wall)
+    world, hist = run(a.ticks, a.ants, a.evap, seed=a.seed, use_wall=a.wall, diffuse=a.diffuse)
     if a.png:
         try:
             import matplotlib

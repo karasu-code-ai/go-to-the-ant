@@ -115,6 +115,29 @@ class World {
     }
     this.home_pher = nxt;
   }
+
+  diffuse_food(D) {
+    // The food trail SPREADS a little (Brownian breadth, §3.1/§4.6): nearby sub-trails
+    // "merge together into a trace." Local stencil over FREE neighbours only (obstacle-aware,
+    // non-toroidal); draws no rng. new = old + D*(mean_free_nbrs - old).
+    if (D <= 0.0) return;
+    const nxt = this.food_pher.map((row) => Float64Array.from(row));
+    for (let y = 0; y < this.h; y++) {
+      for (let x = 0; x < this.w; x++) {
+        if (!this.free(x, y)) continue;
+        let s = 0.0, c = 0;
+        for (const [dx, dy] of DIRS) {
+          const xx = x + dx, yy = y + dy;
+          if (this.free(xx, yy)) { s += this.food_pher[yy][xx]; c += 1; }
+        }
+        if (c > 0) {
+          const cur = this.food_pher[y][x];
+          nxt[y][x] = cur + D * (s / c - cur);
+        }
+      }
+    }
+    this.food_pher = nxt;
+  }
 }
 
 class Ant {
@@ -160,7 +183,7 @@ class Ant {
   }
 }
 
-function run(ticks, nAnts, evap, deposit, seed, useWall) {
+function run(ticks, nAnts, evap, deposit, seed, useWall, diffuse) {
   const world = new World(seed, useWall);
   const ants = Array.from({ length: nAnts }, () => new Ant(world));
   const history = [];
@@ -168,6 +191,7 @@ function run(ticks, nAnts, evap, deposit, seed, useWall) {
   for (let t = 0; t < ticks; t++) {
     world.emit_and_diffuse_home();                           // nest broadcasts the home gradient
     for (const a of ants) a.step(deposit);
+    world.diffuse_food(diffuse);                             // the food trail spreads a little (breadth)
     world.evaporate(evap);
     if (t % stride === 0) history.push([t, world.deliveries]);
   }
@@ -205,7 +229,7 @@ function renderAscii(world, ants) {
 
 function main() {
   const args = process.argv.slice(2);
-  const opts = { ticks: 3000, ants: 90, evap: 0.015, deposit: 1.0, seed: 0, wall: false };
+  const opts = { ticks: 3000, ants: 90, evap: 0.015, deposit: 1.0, seed: 0, wall: false, diffuse: 0.03 };
   for (let i = 0; i < args.length; i++) {
     const a = args[i];
     if (a === '--wall') opts.wall = true;
@@ -214,8 +238,9 @@ function main() {
     else if (a === '--evap') opts.evap = parseFloat(args[++i]);
     else if (a === '--deposit') opts.deposit = parseFloat(args[++i]);
     else if (a === '--seed') opts.seed = parseInt(args[++i], 10);
+    else if (a === '--diffuse') opts.diffuse = parseFloat(args[++i]);
   }
-  const { world, ants, history } = run(opts.ticks, opts.ants, opts.evap, opts.deposit, opts.seed, opts.wall);
+  const { world, ants, history } = run(opts.ticks, opts.ants, opts.evap, opts.deposit, opts.seed, opts.wall, opts.diffuse);
   renderAscii(world, ants);
   console.log(`\nfood delivered to nest over ${opts.ticks} ticks: ${world.deliveries}`);
   console.log('deliveries(t): ' + history.map(([, d]) => d).join(' '));
