@@ -182,6 +182,40 @@ func (wd *World) emitAndDiffuseHome() {
 	wd.homePher = nxt
 }
 
+// diffuseFood: the food trail SPREADS a little (Brownian breadth, §3.1/§4.6): nearby
+// sub-trails "merge together into a trace." Local stencil over FREE neighbours only
+// (obstacle-aware, non-toroidal); draws no rng. new = old + D*(mean_free_nbrs - old).
+func (wd *World) diffuseFood(D float64) {
+	if D <= 0.0 {
+		return
+	}
+	nxt := newGrid[float64](wd.h, wd.w)
+	for y := 0; y < wd.h; y++ {
+		copy(nxt[y], wd.foodPher[y]) // non-free cells stay unchanged
+	}
+	for y := 0; y < wd.h; y++ {
+		for x := 0; x < wd.w; x++ {
+			if !wd.free(x, y) {
+				continue
+			}
+			s := 0.0
+			c := 0
+			for _, d := range DIRS {
+				xx, yy := x+d[0], y+d[1]
+				if wd.free(xx, yy) {
+					s += wd.foodPher[yy][xx]
+					c++
+				}
+			}
+			if c > 0 {
+				cur := wd.foodPher[y][x]
+				nxt[y][x] = cur + D*(s/float64(c)-cur)
+			}
+		}
+	}
+	wd.foodPher = nxt
+}
+
 // ---- The agent: an Ant that reads/writes the shared store --------------------
 
 type Agent struct {
@@ -256,7 +290,7 @@ type sample struct {
 	t, d int
 }
 
-func run(ticks, nAnts int, evap, deposit float64, seed int, useWall bool) (*World, []Agent, []sample) {
+func run(ticks, nAnts int, evap, deposit float64, seed int, useWall bool, diffuse float64) (*World, []Agent, []sample) {
 	world := NewWorld(56, 28, seed, 2, useWall)
 	agents := make([]Agent, nAnts)
 	for i := range agents {
@@ -272,6 +306,7 @@ func run(ticks, nAnts int, evap, deposit float64, seed int, useWall bool) (*Worl
 		for i := range agents {
 			agents[i].step(deposit)
 		}
+		world.diffuseFood(diffuse) // the food trail spreads a little (breadth)
 		world.evaporate(evap)
 		if t%step == 0 {
 			history = append(history, sample{t, world.deliveries})
@@ -334,9 +369,10 @@ func main() {
 	deposit := flag.Float64("deposit", 1.0, "pheromone deposit per carrier step")
 	seed := flag.Int("seed", 0, "PRNG seed")
 	useWall := flag.Bool("wall", false, "add a wall with a gap (the routing demo)")
+	diffuse := flag.Float64("diffuse", 0.03, "food-trail diffusion (breadth); 0 = off")
 	flag.Parse()
 
-	world, agents, hist := run(*ticks, *ants, *evap, *deposit, *seed, *useWall)
+	world, agents, hist := run(*ticks, *ants, *evap, *deposit, *seed, *useWall, *diffuse)
 	renderASCII(world, agents)
 	fmt.Printf("\nfood delivered to nest over %d ticks: %d\n", *ticks, world.deliveries)
 	fmt.Print("deliveries(t): ")

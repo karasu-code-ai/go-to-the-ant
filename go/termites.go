@@ -72,8 +72,10 @@ type Mound struct {
 	w, h  int
 	rng   *SplitMix64
 	mass  [][]float64 // persistent structure (viz)
-	scent [][]float64 // decaying pheromone (bias)
+	scent [][]float64 // dissipative pheromone (bias): diffuses AND decays
+	buf   [][]float64 // double-buffer for the diffusion pass
 	decay float64
+	d     float64 // diffusion rate (Brownian spreading, §4.6)
 }
 
 func newGrid(h, w int) [][]float64 {
@@ -90,20 +92,32 @@ func NewMound(w, h, seed int, decay float64) *Mound {
 		rng:   &SplitMix64{state: uint64(seed)},
 		mass:  newGrid(h, w),
 		scent: newGrid(h, w),
+		buf:   newGrid(h, w),
 		decay: decay,
+		d:     0.010,
 	}
 }
 
-// evaporate: scent dissipates every tick (the entropy leak that lets fresh cores
-// out-smell old spread, so piles climb into columns). mass is persistent.
-func (m *Mound) evaporate() {
+// fieldStep — the field law (§4.6 entropy leak): scent DIFFUSES (Brownian spreading,
+// a local nearest-neighbour stencil) then EVAPORATES. Spreading gives each pile breadth
+// — the substrate for column skirts and inter-column arches — while fresh cores still
+// out-smell the spread. Double-buffered so every cell reads the OLD scent; draws NO rng,
+// so cross-port bit-identity is preserved. new = old + D*(mean8 - old); then *= (1-decay).
+func (m *Mound) fieldStep() {
 	keep := 1.0 - m.decay
 	for y := 0; y < m.h; y++ {
-		row := m.scent[y]
 		for x := 0; x < m.w; x++ {
-			row[x] *= keep
+			acc := 0.0
+			for _, d := range DIRS {
+				nx := (x + d[0] + m.w) % m.w
+				ny := (y + d[1] + m.h) % m.h
+				acc += m.scent[ny][nx]
+			}
+			c := m.scent[y][x]
+			m.buf[y][x] = (c + m.d*(acc/8.0-c)) * keep
 		}
 	}
+	m.scent, m.buf = m.buf, m.scent
 }
 
 // columns: count distinct COLUMNS = toroidal local maxima above a fraction of the
@@ -228,7 +242,7 @@ func run(ticks, n, seed int, decay float64, verbose bool) (*Mound, []int) {
 		for _, tm := range termites {
 			tm.step()
 		}
-		mound.evaporate()
+		mound.fieldStep()
 		if tk%step == 0 {
 			c, _ := mound.columns()
 			hist = append(hist, c)

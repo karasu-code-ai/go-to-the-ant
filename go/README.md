@@ -21,7 +21,7 @@ are directly comparable.
 
 ```sh
 # requires Go 1.18+ on your PATH
-cd go
+cd ports/go
 go build -o forage forage.go     # build
 ./forage --seed 0                # run
 
@@ -35,7 +35,8 @@ Flags: `--seed N` (default 0), `--ticks N` (3000), `--ants N` (90),
 ## Emergence signature (seed 0, 3000 ticks, 90 ants)
 
 - deliveries stay 0 for roughly the first ~900 ticks (the trail must form first),
-- then a clear S-curve rise to tens of deliveries (~46 at seed 0, ~60 at seed 1),
+- then a clear S-curve rise to tens of deliveries (~50 at seed 0, ~64 at seed 1;
+  the trail also diffuses a little — breadth, §3.1/§4.6 — so nearby sub-trails merge),
 - and a visible `foodPher` trail connecting nest `N` and food `F` in the ASCII render.
 
 Numbers differ from the Python reference only because of the different PRNG
@@ -55,9 +56,9 @@ in the naming (agents over a shared store), not in real parallelism — sequenti
 stepping keeps the update deterministic and identical to the reference.
 
 Four local rules (stigmergy — communication through the environment): wander;
-keep a short ~10-step memory of item types seen; not-carrying + on an item pick up
+keep a short ~15-step memory of item types seen; not-carrying + on an item pick up
 with `p=(k+/(k++f))^2`; carrying + on empty drop with `p=(f/(k-+f))^2`, where `f`
-is the fraction of memory holding the SAME type and `k+=1 < k-=3`. Local clusters
+is the fraction of memory holding the SAME type and `k+=0.1 < k-=0.3`. Local clusters
 of like items emerge, retain members, and attract more. No ant compares the whole
 nest — sorting EMERGES.
 
@@ -68,7 +69,7 @@ are directly comparable.
 
 ```sh
 # requires Go 1.18+ on your PATH
-cd go
+cd ports/go
 go build -o sort sort.go          # build
 ./sort --seed 0                   # run (full 120000 ticks)
 
@@ -83,8 +84,8 @@ Flags: `--seed N` (default 0), `--ticks N` (120000), `--ants N` (40).
 Clustering (mean fraction of the 8 toroidal neighbours sharing an item's type)
 starts low and rises monotonically to the high 0.8s / low 0.9s:
 
-- seed 0: `0.263 -> 0.876`
-- seed 1: `0.268 -> 0.903`
+- seed 0: `0.263 -> 0.939`
+- seed 1: `0.268 -> 0.987`
 
 and the AFTER grid shows visibly consolidated A/B/C patches. The initial value is
 lower than the Python reference's `0.350` only because the SplitMix64 shuffle
@@ -104,16 +105,16 @@ is the **shared store** all agents step over sequentially — the actor framing 
 in the naming, not yet in real parallelism, which keeps the update deterministic
 and identical to the reference.
 
-Three interacting rules (two Fermi formulas preserved VERBATIM; the entropy-leak
-force bound and the `dominance=(F/Fmax)^4` spatiality proxy preserved as
-OPERATIONALIZED — see the provenance comments in `wasps.go`) drive genetically
-identical wasps to self-separate into three castes.
+Three interacting rules (two Fermi formulas preserved VERBATIM; the force-relaxation
+bound and the LOCAL `dominance=(F/seenmax)^4` spatiality proxy — each wasp's own fading
+memory of the top force it has faced, no global max — preserved as OPERATIONALIZED; see
+the provenance comments in `wasps.go`) drive genetically identical wasps into three castes.
 
 ## Build & run
 
 ```sh
 # requires Go 1.18+ on your PATH
-cd go
+cd ports/go
 go build -o wasps wasps.go        # build
 ./wasps --seed 0                  # run (full 4000 ticks)
 
@@ -128,7 +129,7 @@ Flags: `--seed N` (default 0), `--ticks N` (4000), `--wasps N` (80, also `--ants
 From genetically identical wasps, THREE castes emerge:
 
 - exactly **1 Chief** — high force (~9-10), HIGH threshold (~4), force >> pop mean,
-- a small band of **Foragers** (~2-8) — force ~5, low threshold ~0,
+- a small band of **Foragers** (~2-6) — force ~5, low threshold ~0,
 - a **Nurse** majority (~70+) — force ~1.
 
 Output: the caste table (n, mean Force, mean Threshold per caste), the (Force,
@@ -157,7 +158,7 @@ density AND load".
 
 ```sh
 # requires Go 1.18+ on your PATH
-cd go
+cd ports/go
 go build -o termites termites.go   # build (name the file — do NOT use ./...)
 ./termites --seed 0                # run (full 40000 ticks)
 
@@ -174,8 +175,8 @@ Flags: `--seed N` (default 0), `--ticks N` (40000), `--ants N` (70),
 - one column grows very tall (tallest mass in the tens of thousands),
 - `columns(t)` peaks early (many transient dabs) then settles to the handful.
 
-Observed: seed 0 -> 5 columns, tallest mass ~96053; seed 1 -> 4 columns, tallest
-~133850. (Python seed 0 gives 7 columns / ~92659; the difference is only the PRNG.)
+Observed: seed 0 -> 5 columns, tallest mass ~103360; seed 1 -> 4 columns, tallest
+~56810. (Python seed 0 gives 5 columns / ~55494; the difference is only the PRNG.)
 
 ---
 
@@ -208,7 +209,7 @@ are directly comparable.
 
 ```sh
 # requires Go 1.18+ on your PATH
-cd go
+cd ports/go
 go build -o flocking flocking.go   # build (name the file — do NOT use ./...)
 ./flocking --seed 0                # run (full 600 ticks)
 
@@ -256,7 +257,7 @@ language-forced deviation.
 
 ```sh
 # requires Go 1.18+ on your PATH
-cd go
+cd ports/go
 go build -o wolves wolves.go      # build (name the file — do NOT use ./...)
 ./wolves --seed 0                 # run (full 260 ticks)
 
