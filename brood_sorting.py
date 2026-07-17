@@ -4,12 +4,12 @@ r"""'Go to the Ant' §3.2 — Ant Brood Sorting (Deneubourg et al. 1991), recrea
 An ant hill keeps larvae, eggs, cocoons, food sorted by kind — but no ant runs a sorting algorithm.
 Parunak's four local rules (§3.2), verbatim in spirit:
   1. Wander randomly around the nest.
-  2. Keep a SHORT memory (~10 steps) of the object types recently seen.
+  2. Keep a SHORT memory (~15 steps) of the object types recently seen.
   3. Not carrying + at an object: pick it up stochastically. p(pickup) = (k+/(k+ + f))^2, where f is the
      fraction of short-term memory occupied by the SAME type. (Rare type -> f small -> pick up ~surely.)
   4. Carrying + on empty ground: drop it stochastically. p(putdown) = (f/(k- + f))^2. (Surrounded by the
      same type -> f large -> drop ~surely.)
-  Constants (paper): k+ ~ 1, k- ~ 3 (k- must exceed k+ or clusters dissolve faster than they form).
+  Constants (paper): k+ 0.1, k- 0.3 (Deneubourg 1991; Parunak's summary rounds to ~1, ~3) (k- must exceed k+ or clusters dissolve faster than they form).
 Local concentrations of like items emerge, retain members, and attract more; stochastic pickup lets
 separate clusters merge. Sorting EMERGES; no ant compares the whole nest.
 
@@ -57,7 +57,7 @@ class Nest:
 
 
 class SortAnt:
-    def __init__(self, nest, mem=10, kp=1.0, km=3.0):
+    def __init__(self, nest, mem=15, kp=0.1, km=0.3):
         self.n = nest; self.x = nest.rng.randrange(nest.w); self.y = nest.rng.randrange(nest.h)
         self.carry = None
         self.mem = deque(maxlen=mem)                       # rule 2: short memory of seen types

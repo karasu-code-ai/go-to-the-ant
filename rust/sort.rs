@@ -14,14 +14,14 @@
 //
 // The four local rules (§3.2), preserved verbatim in spirit:
 //   1. Wander randomly around the nest (dx,dy each in {-1,0,1}, toroidal).
-//   2. Keep a SHORT memory (~10 steps) of the object types recently seen (incl. empties).
+//   2. Keep a SHORT memory (~15 steps) of the object types recently seen (incl. empties).
 //   3. Not carrying + at an object: pick it up stochastically.  p(pickup) = (k+/(k+ + f))^2,
 //      where f is the fraction of short-term memory occupied by the SAME type.
 //      (Rare type -> f small -> pick up ~surely.)
 //   4. Carrying + on empty ground: drop it stochastically.  p(putdown) = (f/(k- + f))^2.
 //      (Surrounded by the same type -> f large -> drop ~surely.)
-//   Constants (paper): k+ ~ 1, k- ~ 3 (k- must exceed k+ or clusters dissolve faster than
-//   they form).  mem ~ 10.
+//   Constants (paper): k+ 0.1, k- 0.3 (Deneubourg 1991; Parunak's summary rounds to ~1, ~3) (k- must exceed k+ or clusters dissolve faster than
+//   they form).  mem=15 (Deneubourg 1991).
 // Local concentrations of like items emerge, retain members, and attract more; stochastic
 // pickup lets separate clusters merge. Sorting EMERGES; no ant compares the whole nest.
 
@@ -232,7 +232,7 @@ fn run(ticks: usize, n_ants: usize, seed: u64, verbose: bool) -> (Nest, Vec<f64>
     let mut nest = Nest::new(&mut rng);
     // ants = [SortAnt(nest) for _ in range(n_ants)] — construction consumes RNG in order.
     let mut ants: Vec<SortAnt> = (0..n_ants)
-        .map(|_| SortAnt::new(&mut rng, 10, 1.0, 3.0))
+        .map(|_| SortAnt::new(&mut rng, 15, 0.1, 0.3))
         .collect();
 
     if verbose {

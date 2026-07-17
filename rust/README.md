@@ -70,8 +70,9 @@ the `(Force, Threshold)` ASCII landscape, and the Forager/Nurse split(t) series.
 
 **Emergence signature (seed 0):** from 80 genetically identical wasps, THREE castes
 self-separate — exactly 1 Chief (Force 9.78, high Threshold 4.00), a small band of
-4 Foragers (Force ~4.9, Threshold ~0), and a Nurse majority of 75 (Force ~0.95).
-Chief force >> pop mean (1.25). Seed 1: Chief 9.59, 3 Foragers ~5.5, 76 Nurses.
+5 Foragers (Force ~5.1, Threshold ~0), and a Nurse majority of 74 (Force ~0.9).
+Chief force >> pop mean. Seed 1: Chief 9.59, 4 Foragers, 75 Nurses. Dominance is
+now LOCAL — each wasp's own fading `seenmax` (the top force it has faced), no global max.
 
 ## Wolves (`wolves.rs`, §3.6)
 
@@ -131,7 +132,8 @@ cumulative-delivery S-curve sample.
 ## Emergence signature (seed 0)
 
 Deliveries stay 0 for the first several hundred ticks (the trail must form first),
-then rise on an S-curve to 46 by tick 3000. Seed 1 gives 60. A pheromone trail
+then rise on an S-curve to 50 by tick 3000 (the trail also diffuses a little — breadth,
+§3.1/§4.6 — so nearby sub-trails merge). Seed 1 gives 64. A pheromone trail
 connecting nest and food is visible in the render. PRNG is SplitMix64 (shared
 across all ports), so exact numbers differ from the Python/Mersenne-Twister
 reference but the qualitative signature matches.
@@ -174,7 +176,7 @@ Output: ASCII before/after grids, the initial and final clustering, and a
 
 Clustering (mean fraction of the 8 toroidal neighbours sharing an item's type)
 starts scattered and rises monotonically to a well-sorted field: seed 0 goes
-0.26 → 0.876, seed 1 goes 0.27 → 0.903. (SplitMix64 differs from the Python
+0.26 → 0.939, seed 1 goes 0.27 → 0.987. (SplitMix64 differs from the Python
 Mersenne-Twister, so the initial scatter value differs from the reference's 0.35,
 but the same rise-to-~0.85-0.92 signature holds.)
 
@@ -214,7 +216,7 @@ Output: the ASCII mass-density render (columns emerge as bright cores, shades
 
 Scattered dabs self-concentrate into a HANDFUL of distinct columns, one very
 tall. `columns(t)` climbs to ~14 as dabs scatter, then consolidates back down to
-a handful: seed 0 → 5 columns, tallest mass ~96053; seed 1 → 4 columns, tallest
-~133850. PRNG is SplitMix64 (shared across all ports), so exact numbers differ
-from the Python/Mersenne-Twister reference (seed 0: 7 columns, ~92659) but the
+a handful: seed 0 → 5 columns, tallest mass ~103360; seed 1 → 4 columns, tallest
+~56810. PRNG is SplitMix64 (shared across all ports), so exact numbers differ
+from the Python/Mersenne-Twister reference (seed 0: 5 columns, ~55494) but the
 qualitative signature — a few tall columns condensing out of noise — matches.

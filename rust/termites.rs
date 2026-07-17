@@ -60,8 +60,10 @@ struct Mound {
     w: usize,
     h: usize,
     mass: Vec<f64>,  // persistent structure (viz)
-    scent: Vec<f64>, // decaying pheromone (bias)
+    scent: Vec<f64>, // dissipative pheromone (bias): diffuses AND decays
+    buf: Vec<f64>,   // double-buffer for the diffusion pass
     decay: f64,
+    d: f64,          // diffusion rate (Brownian spreading, §4.6)
 }
 
 impl Mound {
@@ -71,7 +73,9 @@ impl Mound {
             h,
             mass: vec![0.0; w * h],
             scent: vec![0.0; w * h],
+            buf: vec![0.0; w * h],
             decay,
+            d: 0.010,
         }
     }
 
@@ -80,11 +84,27 @@ impl Mound {
         y * self.w + x
     }
 
-    fn evaporate(&mut self) {
+    // Field law (§4.6 entropy leak): scent DIFFUSES (Brownian spreading, a local
+    // nearest-neighbour stencil) then EVAPORATES. Spreading gives each pile breadth —
+    // the substrate for column skirts and inter-column arches. Double-buffered so every
+    // cell reads the OLD scent; draws NO rng, so cross-port bit-identity is preserved.
+    //   new = old + D*(mean8 - old);  then *= (1 - decay).
+    fn field_step(&mut self) {
         let keep = 1.0 - self.decay;
-        for v in self.scent.iter_mut() {
-            *v *= keep;
+        let (w, h, d) = (self.w, self.h, self.d);
+        for y in 0..h {
+            for x in 0..w {
+                let mut acc = 0.0f64;
+                for &(dx, dy) in DIRS.iter() {
+                    let nx = ((x as i32 + dx).rem_euclid(w as i32)) as usize;
+                    let ny = ((y as i32 + dy).rem_euclid(h as i32)) as usize;
+                    acc += self.scent[ny * w + nx];
+                }
+                let c = self.scent[y * w + x];
+                self.buf[y * w + x] = (c + d * (acc / 8.0 - c)) * keep;
+            }
         }
+        std::mem::swap(&mut self.scent, &mut self.buf);
     }
 
     // Count distinct COLUMNS = toroidal local maxima with mass above a fraction of the tallest peak.
@@ -202,7 +222,7 @@ fn run(
         for tm in termites.iter_mut() {
             tm.step(&mut mound, &mut rng);
         }
-        mound.evaporate();
+        mound.field_step();
         if t % sample_every == 0 {
             hist.push(mound.columns().0);
         }

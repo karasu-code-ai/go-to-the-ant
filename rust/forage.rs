@@ -158,6 +158,37 @@ impl World {
         }
         self.home_pher = nxt;
     }
+
+    fn diffuse_food(&mut self, d: f64) {
+        // The food trail SPREADS a little (Brownian breadth, §3.1/§4.6): nearby sub-trails
+        // "merge together into a trace." Local stencil over FREE neighbours only (obstacle-aware,
+        // non-toroidal); draws no rng. new = old + D*(mean_free_nbrs - old). Jacobi over a copy.
+        if d <= 0.0 {
+            return;
+        }
+        let mut nxt = self.food_pher.clone();
+        for y in 0..H as i32 {
+            for x in 0..W as i32 {
+                if !self.free(x, y) {
+                    continue;
+                }
+                let mut s = 0.0f64;
+                let mut c = 0.0f64;
+                for &(dx, dy) in DIRS.iter() {
+                    let (xx, yy) = (x + dx, y + dy);
+                    if self.free(xx, yy) {
+                        s += self.food_pher[Self::idx(xx, yy)];
+                        c += 1.0;
+                    }
+                }
+                if c > 0.0 {
+                    let cur = self.food_pher[Self::idx(x, y)];
+                    nxt[Self::idx(x, y)] = cur + d * (s / c - cur);
+                }
+            }
+        }
+        self.food_pher = nxt;
+    }
 }
 
 struct Ant {
@@ -231,6 +262,7 @@ fn run(
     deposit: f64,
     seed: u64,
     use_wall: bool,
+    diffuse: f64,
 ) -> (World, Vec<Ant>, Vec<(usize, i64)>) {
     let mut rng = SplitMix64::new(seed);
     let mut world = World::new(use_wall, &mut rng);
@@ -242,6 +274,7 @@ fn run(
         for a in ants.iter_mut() {
             a.step(&mut world, deposit, &mut rng);
         }
+        world.diffuse_food(diffuse); // the food trail spreads a little (breadth)
         world.evaporate(evap);
         if t % sample_every == 0 {
             history.push((t, world.deliveries));
@@ -297,6 +330,7 @@ fn main() {
     let deposit: f64 = 1.0;
     let mut seed: u64 = 0;
     let mut use_wall = false;
+    let mut diffuse: f64 = 0.03;
 
     let args: Vec<String> = std::env::args().collect();
     let mut i = 1;
@@ -318,6 +352,10 @@ fn main() {
                 i += 1;
                 evap = args[i].parse().unwrap_or(0.015);
             }
+            "--diffuse" => {
+                i += 1;
+                diffuse = args[i].parse().unwrap_or(0.03);
+            }
             "--wall" => {
                 use_wall = true;
             }
@@ -326,7 +364,7 @@ fn main() {
         i += 1;
     }
 
-    let (world, final_ants, history) = run(ticks, ants, evap, deposit, seed, use_wall);
+    let (world, final_ants, history) = run(ticks, ants, evap, deposit, seed, use_wall, diffuse);
     render_ascii(&world, &final_ants);
     println!(
         "\nfood delivered to nest over {} ticks: {}",
